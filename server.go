@@ -39,7 +39,7 @@ func (s *ServerAuthenSession) sendReply(ctx context.Context, r *AuthenReply) (st
 	default:
 		r := &AuthenReply{Status: AuthenStatusError, ServerMsg: err.Error()}
 		if werr := s.writePacket(ctx, r); werr != nil {
-			s.c.log(err)
+			s.c.log(werr)
 		}
 	}
 	s.close()
