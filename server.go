@@ -38,10 +38,7 @@ func (s *ServerAuthenSession) sendReply(ctx context.Context, r *AuthenReply) (st
 	case errSessionClosed, context.Canceled, context.DeadlineExceeded:
 	default:
 		r := &AuthenReply{Status: AuthenStatusError, ServerMsg: err.Error()}
-		werr := s.writePacket(ctx, r)
-		if err == nil {
-			err = werr
-		} else if werr != nil {
+		if werr := s.writePacket(ctx, r); werr != nil {
 			s.c.log(err)
 		}
 	}
