@@ -592,6 +592,8 @@ func (c *conn) serve() {
 			if s != c.sess[s.id] {
 				continue
 			}
+			// closed normally so readErr() should always return errSessionClosed
+			s.setErr(errSessionClosed)
 			// fallthrough to close session
 		case sr := <-c.sessReq:
 			// new session request
