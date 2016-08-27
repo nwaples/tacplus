@@ -133,7 +133,7 @@ func (s *session) setErr(err error) {
 func (s *session) readErr() error {
 	s.mu.Lock()
 	err := s.err
-	s.err = nil
+	s.err = errSessionClosed
 	s.mu.Unlock()
 	if err != nil {
 		return err
