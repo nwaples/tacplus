@@ -139,7 +139,11 @@ func (s *session) readErr() error {
 	if err != nil {
 		return err
 	}
-	return s.c.readErr()
+	err = s.c.readErr()
+	if err != nil {
+		return err
+	}
+	return errSessionClosed
 }
 
 // context returns a context.Context that is canceled when the session is closed
@@ -176,10 +180,7 @@ func (s *session) readPacket(ctx context.Context, p packet) error {
 		return ctx.Err()
 	}
 	if data == nil {
-		if err := s.readErr(); err != nil {
-			return err
-		}
-		return errSessionClosed
+		return s.readErr()
 	}
 
 	// check sequence number
@@ -211,10 +212,7 @@ func (s *session) writePacket(ctx context.Context, p packet) error {
 	// don't write on closed session
 	select {
 	case <-s.done:
-		if err := s.readErr(); err != nil {
-			return err
-		}
-		return errSessionClosed
+		return s.readErr()
 	default:
 	}
 
@@ -241,10 +239,7 @@ func (s *session) writePacket(ctx context.Context, p packet) error {
 	// send write request
 	select {
 	case <-s.done:
-		if err := s.readErr(); err != nil {
-			return err
-		}
-		return errSessionClosed
+		return s.readErr()
 	case <-ctx.Done():
 		return ctx.Err()
 	case s.c.wc <- wr:
