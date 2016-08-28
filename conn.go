@@ -171,18 +171,14 @@ func (s *session) readPacket(ctx context.Context, p packet) error {
 	// get raw packet from session in channel
 	select {
 	case data = <-s.in:
-	case <-s.done:
-		// check for queued packet on closed session
-		select {
-		case data = <-s.in:
-		default:
-			if err := s.readErr(); err != nil {
-				return err
-			}
-			return errSessionClosed
-		}
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+	if data == nil {
+		if err := s.readErr(); err != nil {
+			return err
+		}
+		return errSessionClosed
 	}
 
 	// check sequence number
@@ -611,6 +607,7 @@ func (c *conn) serve() {
 		// close session
 		delete(c.sess, s.id)
 		close(s.done)
+		close(s.in)
 		if len(c.sess) == 0 {
 			if !mux {
 				break
@@ -631,6 +628,7 @@ func (c *conn) serve() {
 	c.close()
 	for _, s := range c.sess {
 		close(s.done)
+		close(s.in)
 	}
 	c.nc.Close()
 }
