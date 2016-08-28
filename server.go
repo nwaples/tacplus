@@ -32,6 +32,7 @@ func (s *ServerAuthenSession) sendReply(ctx context.Context, r *AuthenReply) (st
 	switch err {
 	case nil:
 		if c.Abort {
+			s.close()
 			return "", errors.New("Session Aborted: " + string(c.Data))
 		}
 		return c.UserMsg, nil
