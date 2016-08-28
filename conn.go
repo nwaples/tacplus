@@ -20,7 +20,8 @@ const (
 	verDefault         = verMajor<<4 | 0x0 // Default protocol version
 	verDefaultMinorOne = verMajor<<4 | 0x1 // Default with minor version one
 
-	hdrLen = 12 // Packet header length
+	hdrLen     = 12     // Packet header length
+	maxBodyLen = 196356 // Maximum possible packet body size (AuthorResponse)
 
 	// Packet header field offsets
 	hdrVer     = 0
@@ -378,7 +379,7 @@ func (c *conn) newClientSession(ctx context.Context, ver, t uint8) (*session, er
 
 // readPacket reads a raw TACACS+ packet or returns an error
 func (c *conn) readPacket() ([]byte, error) {
-	p := make([]byte, 4096)
+	p := make([]byte, hdrLen, 1024)
 
 	var deadline time.Time
 	if c.ReadTimeout > 0 {
@@ -393,7 +394,7 @@ func (c *conn) readPacket() ([]byte, error) {
 	var err error
 	// loop for first non-empty read for start of packet
 	for n == 0 && err == nil {
-		n, err = c.nc.Read(p[:hdrLen])
+		n, err = c.nc.Read(p)
 	}
 	// header not fully read
 	if n < hdrLen {
@@ -405,7 +406,7 @@ func (c *conn) readPacket() ([]byte, error) {
 		// read rest of header
 		for n < hdrLen && err == nil {
 			var nn int
-			nn, err = c.nc.Read(p[n:hdrLen])
+			nn, err = c.nc.Read(p[n:])
 			n += nn
 		}
 		if n < hdrLen {
@@ -425,13 +426,13 @@ func (c *conn) readPacket() ([]byte, error) {
 
 	// check body size
 	s := binary.BigEndian.Uint32(p[hdrBodyLen:])
-	if s > uint32(len(p)-hdrLen) {
+	if s > maxBodyLen {
 		return nil, errors.New("packet too large")
 	} else if s == 0 {
 		// empty packet body, so return
-		return p[:hdrLen], nil
+		return p, nil
 	}
-	p = p[:hdrLen+s]
+	p = append(p, make([]byte, s)...)
 
 	// set read deadline for packet body if we haven't set it before
 	if c.ReadTimeout > 0 && deadline.IsZero() {
