@@ -132,27 +132,8 @@ func (b *readBuf) string(n int) string {
 	return string(s)
 }
 
-type writeBuf []byte
-
-func (b *writeBuf) writeByte(c byte) {
-	(*b)[0] = c
-	*b = (*b)[1:]
-}
-
-func (b *writeBuf) writeUint16(n int) {
-	(*b)[0] = byte(n >> 8)
-	(*b)[1] = byte(n)
-	*b = (*b)[2:]
-}
-
-func (b *writeBuf) write(buf []byte) {
-	n := copy(*b, buf)
-	*b = (*b)[n:]
-}
-
-func (b *writeBuf) writeString(s string) {
-	n := copy(*b, s)
-	*b = (*b)[n:]
+func appendUint16(b []byte, i, j int) []byte {
+	return append(b, byte(i>>8), byte(i), byte(j>>8), byte(j))
 }
 
 // AuthenStart is a TACACS+ authentication start packet.
@@ -202,23 +183,16 @@ func (a *AuthenStart) marshal() ([]byte, error) {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
-	buf := make([]byte, size+hdrLen)
+	b := make([]byte, hdrLen, size+hdrLen)
 
-	b := writeBuf(buf[hdrLen:])
-	b.writeByte(a.Action)
-	b.writeByte(a.PrivLvl)
-	b.writeByte(a.AuthenType)
-	b.writeByte(a.AuthenService)
-	b.writeByte(uint8(len(a.User)))
-	b.writeByte(uint8(len(a.Port)))
-	b.writeByte(uint8(len(a.RemAddr)))
-	b.writeByte(uint8(len(a.Data)))
-	b.writeString(a.User)
-	b.writeString(a.Port)
-	b.writeString(a.RemAddr)
-	b.write(a.Data)
+	b = append(b, a.Action, a.PrivLvl, a.AuthenType, a.AuthenService)
+	b = append(b, uint8(len(a.User)), uint8(len(a.Port)), uint8(len(a.RemAddr)), uint8(len(a.Data)))
+	b = append(b, a.User...)
+	b = append(b, a.Port...)
+	b = append(b, a.RemAddr...)
+	b = append(b, a.Data...)
 
-	return buf, nil
+	return b, nil
 }
 
 func (a *AuthenStart) unmarshal(buf []byte) error {
@@ -258,6 +232,13 @@ func (a *AuthenReply) last() bool {
 	return a.Status < AuthenStatusGetData || a.Status > AuthenStatusGetPass
 }
 
+func (a *AuthenReply) flags() uint8 {
+	if a.NoEcho {
+		return authenReplyFlagNoEcho
+	}
+	return 0
+}
+
 func (a *AuthenReply) marshal() ([]byte, error) {
 	size := 6
 	if len(a.ServerMsg) > math.MaxUint16 {
@@ -268,21 +249,14 @@ func (a *AuthenReply) marshal() ([]byte, error) {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
-	buf := make([]byte, size+hdrLen)
 
-	b := writeBuf(buf[hdrLen:])
-	b.writeByte(a.Status)
-	if a.NoEcho {
-		b.writeByte(authenReplyFlagNoEcho)
-	} else {
-		b.writeByte(0)
-	}
-	b.writeUint16(len(a.ServerMsg))
-	b.writeUint16(len(a.Data))
-	b.writeString(a.ServerMsg)
-	b.write(a.Data)
+	b := make([]byte, hdrLen, size+hdrLen)
+	b = append(b, a.Status, a.flags())
+	b = appendUint16(b, len(a.ServerMsg), len(a.Data))
+	b = append(b, a.ServerMsg...)
+	b = append(b, a.Data...)
 
-	return buf, nil
+	return b, nil
 }
 
 func (a *AuthenReply) unmarshal(buf []byte) error {
@@ -311,6 +285,13 @@ type authenContinue struct {
 	Data    []byte
 }
 
+func (a *authenContinue) flags() uint8 {
+	if a.Abort {
+		return authenContinueFlagAbort
+	}
+	return 0
+}
+
 func (a *authenContinue) marshal() ([]byte, error) {
 	size := 5
 	if len(a.UserMsg) > math.MaxUint16 {
@@ -321,20 +302,14 @@ func (a *authenContinue) marshal() ([]byte, error) {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
-	buf := make([]byte, size+hdrLen)
 
-	b := writeBuf(buf[hdrLen:])
-	b.writeUint16(len(a.UserMsg))
-	b.writeUint16(len(a.Data))
-	if a.Abort {
-		b.writeByte(authenContinueFlagAbort)
-	} else {
-		b.writeByte(0)
-	}
-	b.writeString(a.UserMsg)
-	b.write(a.Data)
+	b := make([]byte, hdrLen, size+hdrLen)
+	b = appendUint16(b, len(a.UserMsg), len(a.Data))
+	b = append(b, a.flags())
+	b = append(b, a.UserMsg...)
+	b = append(b, a.Data...)
 
-	return buf, nil
+	return b, nil
 }
 
 func (a *authenContinue) unmarshal(buf []byte) error {
@@ -391,28 +366,21 @@ func (a *AuthorRequest) marshal() ([]byte, error) {
 		}
 		size += len(s)
 	}
-	buf := make([]byte, size+hdrLen)
 
-	b := writeBuf(buf[hdrLen:])
-	b.writeByte(a.AuthenMethod)
-	b.writeByte(a.PrivLvl)
-	b.writeByte(a.AuthenType)
-	b.writeByte(a.AuthenService)
-	b.writeByte(uint8(len(a.User)))
-	b.writeByte(uint8(len(a.Port)))
-	b.writeByte(uint8(len(a.RemAddr)))
-	b.writeByte(uint8(len(a.Arg)))
+	b := make([]byte, hdrLen, size+hdrLen)
+	b = append(b, a.AuthenMethod, a.PrivLvl, a.AuthenType, a.AuthenService)
+	b = append(b, uint8(len(a.User)), uint8(len(a.Port)), uint8(len(a.RemAddr)), uint8(len(a.Arg)))
 	for _, s := range a.Arg {
-		b.writeByte(uint8(len(s)))
+		b = append(b, uint8(len(s)))
 	}
-	b.writeString(a.User)
-	b.writeString(a.Port)
-	b.writeString(a.RemAddr)
+	b = append(b, a.User...)
+	b = append(b, a.Port...)
+	b = append(b, a.RemAddr...)
 	for _, s := range a.Arg {
-		b.writeString(s)
+		b = append(b, s...)
 	}
 
-	return buf, nil
+	return b, nil
 }
 
 func (a *AuthorRequest) unmarshal(buf []byte) error {
@@ -474,23 +442,20 @@ func (a *AuthorResponse) marshal() ([]byte, error) {
 		}
 		size += len(s)
 	}
-	buf := make([]byte, size+hdrLen)
 
-	b := writeBuf(buf[hdrLen:])
-	b.writeByte(a.Status)
-	b.writeByte(uint8(len(a.Arg)))
-	b.writeUint16(len(a.ServerMsg))
-	b.writeUint16(len(a.Data))
+	b := make([]byte, hdrLen, size+hdrLen)
+	b = append(b, a.Status, uint8(len(a.Arg)))
+	b = appendUint16(b, len(a.ServerMsg), len(a.Data))
 	for _, s := range a.Arg {
-		b.writeByte(uint8(len(s)))
+		b = append(b, uint8(len(s)))
 	}
-	b.writeString(a.ServerMsg)
-	b.writeString(a.Data)
+	b = append(b, a.ServerMsg...)
+	b = append(b, a.Data...)
 	for _, s := range a.Arg {
-		b.writeString(s)
+		b = append(b, s...)
 	}
 
-	return buf, nil
+	return b, nil
 }
 
 func (a *AuthorResponse) unmarshal(buf []byte) error {
@@ -556,29 +521,21 @@ func (a *AcctRequest) marshal() ([]byte, error) {
 		}
 		size += len(s)
 	}
-	buf := make([]byte, size+hdrLen)
 
-	b := writeBuf(buf[hdrLen:])
-	b.writeByte(a.Flags)
-	b.writeByte(a.AuthenMethod)
-	b.writeByte(a.PrivLvl)
-	b.writeByte(a.AuthenType)
-	b.writeByte(a.AuthenService)
-	b.writeByte(uint8(len(a.User)))
-	b.writeByte(uint8(len(a.Port)))
-	b.writeByte(uint8(len(a.RemAddr)))
-	b.writeByte(uint8(len(a.Arg)))
+	b := make([]byte, hdrLen, size+hdrLen)
+	b = append(b, a.Flags, a.AuthenMethod, a.PrivLvl, a.AuthenType, a.AuthenService)
+	b = append(b, uint8(len(a.User)), uint8(len(a.Port)), uint8(len(a.RemAddr)), uint8(len(a.Arg)))
 	for _, s := range a.Arg {
-		b.writeByte(uint8(len(s)))
+		b = append(b, uint8(len(s)))
 	}
-	b.writeString(a.User)
-	b.writeString(a.Port)
-	b.writeString(a.RemAddr)
+	b = append(b, a.User...)
+	b = append(b, a.Port...)
+	b = append(b, a.RemAddr...)
 	for _, s := range a.Arg {
-		b.writeString(s)
+		b = append(b, s...)
 	}
 
-	return buf, nil
+	return b, nil
 }
 
 func (a *AcctRequest) unmarshal(buf []byte) error {
@@ -629,16 +586,14 @@ func (a *AcctReply) marshal() ([]byte, error) {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
-	buf := make([]byte, size+hdrLen)
 
-	b := writeBuf(buf[hdrLen:])
-	b.writeUint16(len(a.ServerMsg))
-	b.writeUint16(len(a.Data))
-	b.writeByte(a.Status)
-	b.writeString(a.ServerMsg)
-	b.writeString(a.Data)
+	b := make([]byte, hdrLen, size+hdrLen)
+	b = appendUint16(b, len(a.ServerMsg), len(a.Data))
+	b = append(b, a.Status)
+	b = append(b, a.ServerMsg...)
+	b = append(b, a.Data...)
 
-	return buf, nil
+	return b, nil
 }
 
 func (a *AcctReply) unmarshal(buf []byte) error {
