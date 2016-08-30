@@ -170,6 +170,13 @@ func (s *session) nextSeqNo() uint8 {
 	return s.seq
 }
 
+func (s *session) flags() uint8 {
+	if s.c.Mux {
+		return hdrFlagSingleConnect
+	}
+	return 0
+}
+
 func (s *session) readPacket(ctx context.Context, p packet) error {
 	var data []byte
 
@@ -224,9 +231,7 @@ func (s *session) writePacket(ctx context.Context, p packet) error {
 	data[hdrVer] = s.version
 	data[hdrType] = s.sessType
 	data[hdrSeqNo] = s.nextSeqNo()
-	if s.c.Mux {
-		data[hdrFlags] = hdrFlagSingleConnect
-	}
+	data[hdrFlags] = s.flags()
 	binary.BigEndian.PutUint32(data[hdrID:], s.id)
 	binary.BigEndian.PutUint32(data[hdrBodyLen:], uint32(len(data)-hdrLen))
 	crypt(data, s.c.Secret)
