@@ -9,12 +9,12 @@ import (
 
 // ClientAuthenSession is a TACACS+ client authentication session.
 type ClientAuthenSession struct {
-	s *session
+	*session
 }
 
 // Close closes the client authentication session.
 func (c *ClientAuthenSession) Close() {
-	c.s.close()
+	c.close()
 }
 
 // Abort sends a message back to the server aborting the session with the supplied reason.
@@ -22,8 +22,8 @@ func (c *ClientAuthenSession) Abort(ctx context.Context, reason string) error {
 	if len(reason) > maxUint16 {
 		reason = reason[:maxUint16]
 	}
-	err := c.s.writePacket(ctx, &authenContinue{Abort: true, Data: []byte(reason)})
-	c.s.close()
+	err := c.writePacket(ctx, &authenContinue{Abort: true, Data: []byte(reason)})
+	c.close()
 	return err
 }
 
@@ -31,18 +31,18 @@ func (c *ClientAuthenSession) Abort(ctx context.Context, reason string) error {
 // A new AuthenReply or error is returned.
 func (c *ClientAuthenSession) Continue(ctx context.Context, msg string) (*AuthenReply, error) {
 	// sequence number too large to continue
-	if c.s.seqNo() >= 0xfe {
+	if c.seqNo() >= 0xfe {
 		_ = c.Abort(ctx, "")
 		return nil, errors.New("session aborted, too many packets")
 	}
 
 	rep := new(AuthenReply)
-	if err := sendRequest(ctx, c.s, &authenContinue{UserMsg: msg}, rep); err != nil {
-		c.s.close()
+	if err := sendRequest(ctx, c.session, &authenContinue{UserMsg: msg}, rep); err != nil {
+		c.close()
 		return nil, err
 	}
 	if rep.last() {
-		c.s.close()
+		c.close()
 	}
 	return rep, nil
 }
@@ -189,5 +189,5 @@ func (c *Client) SendAuthenStart(ctx context.Context, as *AuthenStart) (*AuthenR
 		s.close()
 		return rep, nil, nil
 	}
-	return rep, &ClientAuthenSession{s: s}, nil
+	return rep, &ClientAuthenSession{s}, nil
 }
