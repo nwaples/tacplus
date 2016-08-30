@@ -20,7 +20,7 @@ func (s *ServerAuthenSession) Log(v ...interface{}) {
 }
 
 func (s *ServerAuthenSession) sendReply(ctx context.Context, r *AuthenReply) (string, error) {
-	//if s.seqNo() > 0xfb {
+	//if s.seq > 0xfb {
 	//	return "", errors.New("operation will cause sequence number to overlap")
 	//}
 	err := s.writePacket(ctx, r)

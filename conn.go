@@ -105,6 +105,7 @@ type writeRequest struct {
 // session is a TACACS+ session
 type session struct {
 	id       uint32        // Session ID
+	seq      uint8         // last seen packet sequence number
 	version  uint8         // Protocol version
 	sessType uint8         // Session type
 	in       chan []byte   // Buffered channel for incoming raw packet
@@ -112,7 +113,6 @@ type session struct {
 	done     chan struct{} // close channel to close session
 
 	mu  sync.Mutex // Guards the following
-	seq uint8      // last seen packet sequence number
 	err error      // last seen error
 }
 
@@ -151,25 +151,6 @@ func (s *session) context() context.Context {
 	return doneContext(s.done)
 }
 
-func (s *session) seqNo() uint8 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.seq
-}
-
-func (s *session) setSeqNo(n uint8) {
-	s.mu.Lock()
-	s.seq = n
-	s.mu.Unlock()
-}
-
-func (s *session) nextSeqNo() uint8 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.seq++
-	return s.seq
-}
-
 func (s *session) flags() uint8 {
 	if s.c.Mux {
 		return hdrFlagSingleConnect
@@ -191,13 +172,11 @@ func (s *session) readPacket(ctx context.Context, p packet) error {
 	}
 
 	// check sequence number
-	seq := data[hdrSeqNo]
-	if nseq := s.nextSeqNo(); nseq != seq {
+	seq := data[hdrSeqNo] // packet seqno
+	nseq := s.seq + 1     // expected packet seqno
+	s.seq = seq           // save packet seqno
+	if nseq != seq {
 		// sequence number not the same as expected
-
-		// set sequence number to that from the packet so any error packet
-		// sent back will correctly use the next sequence number
-		s.setSeqNo(seq)
 
 		if nseq == 1 {
 			// new session, so packet is probably the result of a previous
@@ -206,6 +185,7 @@ func (s *session) readPacket(ctx context.Context, p packet) error {
 		}
 		return errInvalidSeqNo
 	}
+
 	// check parity of received packet
 	if seq&0x1 == s.c.parity {
 		return errInvalidSeqNo
@@ -227,10 +207,11 @@ func (s *session) writePacket(ctx context.Context, p packet) error {
 	if err != nil {
 		return err
 	}
+	s.seq++
 	// setup header fields
 	data[hdrVer] = s.version
 	data[hdrType] = s.sessType
-	data[hdrSeqNo] = s.nextSeqNo()
+	data[hdrSeqNo] = s.seq
 	data[hdrFlags] = s.flags()
 	binary.BigEndian.PutUint32(data[hdrID:], s.id)
 	binary.BigEndian.PutUint32(data[hdrBodyLen:], uint32(len(data)-hdrLen))

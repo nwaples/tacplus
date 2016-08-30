@@ -31,7 +31,7 @@ func (c *ClientAuthenSession) Abort(ctx context.Context, reason string) error {
 // A new AuthenReply or error is returned.
 func (c *ClientAuthenSession) Continue(ctx context.Context, msg string) (*AuthenReply, error) {
 	// sequence number too large to continue
-	if c.seqNo() >= 0xfe {
+	if c.seq >= 0xfe {
 		_ = c.Abort(ctx, "")
 		return nil, errors.New("session aborted, too many packets")
 	}
