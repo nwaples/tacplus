@@ -167,25 +167,19 @@ func (a *AuthenStart) version() uint8 {
 	return verDefault
 }
 
-func (a *AuthenStart) marshal() ([]byte, error) {
-	size := 8
+func (a *AuthenStart) marshal(b []byte) ([]byte, error) {
 	if len(a.User) > maxUint8 {
-		return nil, errors.New("User field too large")
+		return b, errors.New("User field too large")
 	}
-	size += len(a.User)
 	if len(a.Port) > maxUint8 {
-		return nil, errors.New("Port field too large")
+		return b, errors.New("Port field too large")
 	}
-	size += len(a.Port)
 	if len(a.RemAddr) > maxUint8 {
-		return nil, errors.New("RemAddr field too large")
+		return b, errors.New("RemAddr field too large")
 	}
-	size += len(a.RemAddr)
 	if len(a.Data) > maxUint8 {
-		return nil, errors.New("Data field too large")
+		return b, errors.New("Data field too large")
 	}
-	size += len(a.Data)
-	b := make([]byte, hdrLen, size+hdrLen)
 
 	b = append(b, a.Action, a.PrivLvl, a.AuthenType, a.AuthenService)
 	b = append(b, uint8(len(a.User)), uint8(len(a.Port)), uint8(len(a.RemAddr)), uint8(len(a.Data)))
@@ -241,18 +235,14 @@ func (a *AuthenReply) flags() uint8 {
 	return 0
 }
 
-func (a *AuthenReply) marshal() ([]byte, error) {
-	size := 6
+func (a *AuthenReply) marshal(b []byte) ([]byte, error) {
 	if len(a.ServerMsg) > maxUint16 {
-		return nil, errors.New("ServerMsg field too large")
+		return b, errors.New("ServerMsg field too large")
 	}
-	size += len(a.ServerMsg)
 	if len(a.Data) > maxUint16 {
-		return nil, errors.New("Data field too large")
+		return b, errors.New("Data field too large")
 	}
-	size += len(a.Data)
 
-	b := make([]byte, hdrLen, size+hdrLen)
 	b = append(b, a.Status, a.flags())
 	b = appendUint16(b, len(a.ServerMsg), len(a.Data))
 	b = append(b, a.ServerMsg...)
@@ -294,18 +284,14 @@ func (a *authenContinue) flags() uint8 {
 	return 0
 }
 
-func (a *authenContinue) marshal() ([]byte, error) {
-	size := 5
+func (a *authenContinue) marshal(b []byte) ([]byte, error) {
 	if len(a.UserMsg) > maxUint16 {
-		return nil, errors.New("UserMsg field too large")
+		return b, errors.New("UserMsg field too large")
 	}
-	size += len(a.UserMsg)
 	if len(a.Data) > maxUint16 {
-		return nil, errors.New("Data field too large")
+		return b, errors.New("Data field too large")
 	}
-	size += len(a.Data)
 
-	b := make([]byte, hdrLen, size+hdrLen)
 	b = appendUint16(b, len(a.UserMsg), len(a.Data))
 	b = append(b, a.flags())
 	b = append(b, a.UserMsg...)
@@ -343,33 +329,26 @@ type AuthorRequest struct {
 	Arg           []string
 }
 
-func (a *AuthorRequest) marshal() ([]byte, error) {
-	size := 8
+func (a *AuthorRequest) marshal(b []byte) ([]byte, error) {
 	if len(a.User) > maxUint8 {
-		return nil, errors.New("User field too large")
+		return b, errors.New("User field too large")
 	}
-	size += len(a.User)
 	if len(a.Port) > maxUint8 {
-		return nil, errors.New("Port field too large")
+		return b, errors.New("Port field too large")
 	}
-	size += len(a.Port)
 	if len(a.RemAddr) > maxUint8 {
-		return nil, errors.New("RemAddr field too large")
+		return b, errors.New("RemAddr field too large")
 	}
-	size += len(a.RemAddr)
 	if len(a.Arg) > maxUint8 {
-		return nil, errors.New("Too many Arg's")
+		return b, errors.New("Too many Arg's")
 	}
-	size += len(a.Arg)
 
 	for _, s := range a.Arg {
 		if len(s) > maxUint8 {
-			return nil, errors.New("Arg Too Long")
+			return b, errors.New("Arg Too Long")
 		}
-		size += len(s)
 	}
 
-	b := make([]byte, hdrLen, size+hdrLen)
 	b = append(b, a.AuthenMethod, a.PrivLvl, a.AuthenType, a.AuthenService)
 	b = append(b, uint8(len(a.User)), uint8(len(a.Port)), uint8(len(a.RemAddr)), uint8(len(a.Arg)))
 	for _, s := range a.Arg {
@@ -423,29 +402,23 @@ type AuthorResponse struct {
 	Data      string
 }
 
-func (a *AuthorResponse) marshal() ([]byte, error) {
-	size := 6
+func (a *AuthorResponse) marshal(b []byte) ([]byte, error) {
 	if len(a.Arg) > maxUint8 {
-		return nil, errors.New("Too many Arg's")
+		return b, errors.New("Too many Arg's")
 	}
-	size += len(a.Arg)
 	if len(a.ServerMsg) > maxUint16 {
-		return nil, errors.New("ServerMsg field too large")
+		return b, errors.New("ServerMsg field too large")
 	}
-	size += len(a.ServerMsg)
 	if len(a.Data) > maxUint16 {
-		return nil, errors.New("Data field too large")
+		return b, errors.New("Data field too large")
 	}
-	size += len(a.Data)
 
 	for _, s := range a.Arg {
 		if len(s) > maxUint8 {
-			return nil, errors.New("Arg Too Long")
+			return b, errors.New("Arg Too Long")
 		}
-		size += len(s)
 	}
 
-	b := make([]byte, hdrLen, size+hdrLen)
 	b = append(b, a.Status, uint8(len(a.Arg)))
 	b = appendUint16(b, len(a.ServerMsg), len(a.Data))
 	for _, s := range a.Arg {
@@ -498,33 +471,26 @@ type AcctRequest struct {
 	Arg           []string
 }
 
-func (a *AcctRequest) marshal() ([]byte, error) {
-	size := 9
+func (a *AcctRequest) marshal(b []byte) ([]byte, error) {
 	if len(a.User) > maxUint8 {
-		return nil, errors.New("User field too large")
+		return b, errors.New("User field too large")
 	}
-	size += len(a.User)
 	if len(a.Port) > maxUint8 {
-		return nil, errors.New("Port field too large")
+		return b, errors.New("Port field too large")
 	}
-	size += len(a.Port)
 	if len(a.RemAddr) > maxUint8 {
-		return nil, errors.New("RemAddr field too large")
+		return b, errors.New("RemAddr field too large")
 	}
-	size += len(a.RemAddr)
 	if len(a.Arg) > maxUint8 {
-		return nil, errors.New("Too many Arg's")
+		return b, errors.New("Too many Arg's")
 	}
-	size += len(a.Arg)
 
 	for _, s := range a.Arg {
 		if len(s) > maxUint8 {
-			return nil, errors.New("Arg Too Long")
+			return b, errors.New("Arg Too Long")
 		}
-		size += len(s)
 	}
 
-	b := make([]byte, hdrLen, size+hdrLen)
 	b = append(b, a.Flags, a.AuthenMethod, a.PrivLvl, a.AuthenType, a.AuthenService)
 	b = append(b, uint8(len(a.User)), uint8(len(a.Port)), uint8(len(a.RemAddr)), uint8(len(a.Arg)))
 	for _, s := range a.Arg {
@@ -578,18 +544,14 @@ type AcctReply struct {
 	Data      string
 }
 
-func (a *AcctReply) marshal() ([]byte, error) {
-	size := 5
+func (a *AcctReply) marshal(b []byte) ([]byte, error) {
 	if len(a.ServerMsg) > maxUint16 {
-		return nil, errors.New("ServerMsg field too large")
+		return b, errors.New("ServerMsg field too large")
 	}
-	size += len(a.ServerMsg)
 	if len(a.Data) > maxUint16 {
-		return nil, errors.New("Data field too large")
+		return b, errors.New("Data field too large")
 	}
-	size += len(a.Data)
 
-	b := make([]byte, hdrLen, size+hdrLen)
 	b = appendUint16(b, len(a.ServerMsg), len(a.Data))
 	b = append(b, a.Status)
 	b = append(b, a.ServerMsg...)
@@ -617,10 +579,5 @@ func (a *AcctReply) unmarshal(buf []byte) error {
 // nullPacket represents an empty packet.
 type nullPacket struct{}
 
-func (p *nullPacket) marshal() ([]byte, error) {
-	return make([]byte, hdrLen), nil
-}
-
-func (p *nullPacket) unmarshal(buf []byte) error {
-	return nil
-}
+func (p *nullPacket) marshal(b []byte) ([]byte, error) { return b, nil }
+func (p *nullPacket) unmarshal(buf []byte) error       { return nil }

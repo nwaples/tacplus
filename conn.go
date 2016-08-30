@@ -91,8 +91,8 @@ func crypt(data, key []byte) {
 
 // a packet can be marshalled to and from raw bytes
 type packet interface {
-	marshal() ([]byte, error) // encodes the packet into raw bytes (including blank packet header)
-	unmarshal([]byte) error   // decodes the packet from the raw bytes (not including packet header)
+	marshal([]byte) ([]byte, error) // appends the encoded packet to the provided slice
+	unmarshal([]byte) error         // decodes the packet
 }
 
 // writeRequest is a request to write a raw TACACS+ packet
@@ -216,7 +216,7 @@ func (s *session) writePacket(ctx context.Context, p packet) error {
 	default:
 	}
 
-	data, err := p.marshal()
+	data, err := p.marshal(make([]byte, hdrLen, 1024))
 	if err != nil {
 		return err
 	}
