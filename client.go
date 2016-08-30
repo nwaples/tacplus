@@ -19,6 +19,9 @@ func (c *ClientAuthenSession) Close() {
 
 // Abort sends a message back to the server aborting the session with the supplied reason.
 func (c *ClientAuthenSession) Abort(ctx context.Context, reason string) error {
+	if len(reason) > maxUint16 {
+		reason = reason[:maxUint16]
+	}
 	err := c.s.writePacket(ctx, &authenContinue{Abort: true, Data: []byte(reason)})
 	c.s.close()
 	return err
