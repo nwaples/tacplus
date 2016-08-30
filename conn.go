@@ -63,17 +63,17 @@ func (d doneContext) Err() error {
 }
 
 // crypt encrypts or decrypts the body of a TACACS+ packet.
-func crypt(data, key []byte) {
+func crypt(p, key []byte) {
 	buf := make([]byte, len(key)+6)
-	copy(buf, data[4:8])      // session id
-	copy(buf[4:], key)        // shared secret
-	buf[len(buf)-2] = data[0] // version
-	buf[len(buf)-1] = data[2] // sequence number
+	copy(buf, p[4:8])      // session id
+	copy(buf[4:], key)     // shared secret
+	buf[len(buf)-2] = p[0] // version
+	buf[len(buf)-1] = p[2] // sequence number
 
 	var sum []byte
 
 	h := md5.New()
-	body := data[hdrLen:]
+	body := p[hdrLen:]
 	for len(body) > 0 {
 		h.Reset()
 		h.Write(buf)
@@ -97,7 +97,7 @@ type packet interface {
 
 // writeRequest is a request to write a raw TACACS+ packet
 type writeRequest struct {
-	data     []byte     // raw packet
+	p        []byte     // raw packet
 	deadline time.Time  // deadline for write
 	ec       chan error // write result is returned on this channel
 }
@@ -236,7 +236,7 @@ func (s *session) writePacket(ctx context.Context, p packet) error {
 	binary.BigEndian.PutUint32(data[hdrBodyLen:], uint32(len(data)-hdrLen))
 	crypt(data, s.c.Secret)
 
-	wr := writeRequest{data: data, ec: make(chan error, 1)}
+	wr := writeRequest{p: data, ec: make(chan error, 1)}
 	if deadline, ok := ctx.Deadline(); ok {
 		wr.deadline = deadline
 	}
@@ -497,7 +497,7 @@ func (c *conn) writeLoop() {
 
 			err := c.nc.SetWriteDeadline(deadline)
 			if err == nil {
-				_, err = c.nc.Write(req.data)
+				_, err = c.nc.Write(req.p)
 			}
 			req.ec <- err
 			if err != nil {
