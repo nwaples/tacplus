@@ -1,9 +1,6 @@
 package tacplus
 
-import (
-	"errors"
-	"math"
-)
+import "errors"
 
 const (
 	// Session Types
@@ -98,7 +95,12 @@ const (
 	AcctStatusFollow  = 0x21
 )
 
-var errBadPacket = errors.New("bad secret or packet")
+var (
+	errBadPacket = errors.New("bad secret or packet")
+
+	maxUint8  = int(^uint8(0))
+	maxUint16 = int(^uint16(0))
+)
 
 type readBuf []byte
 
@@ -167,19 +169,19 @@ func (a *AuthenStart) version() uint8 {
 
 func (a *AuthenStart) marshal() ([]byte, error) {
 	size := 8
-	if len(a.User) > math.MaxUint8 {
+	if len(a.User) > maxUint8 {
 		return nil, errors.New("User field too large")
 	}
 	size += len(a.User)
-	if len(a.Port) > math.MaxUint8 {
+	if len(a.Port) > maxUint8 {
 		return nil, errors.New("Port field too large")
 	}
 	size += len(a.Port)
-	if len(a.RemAddr) > math.MaxUint8 {
+	if len(a.RemAddr) > maxUint8 {
 		return nil, errors.New("RemAddr field too large")
 	}
 	size += len(a.RemAddr)
-	if len(a.Data) > math.MaxUint8 {
+	if len(a.Data) > maxUint8 {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
@@ -241,11 +243,11 @@ func (a *AuthenReply) flags() uint8 {
 
 func (a *AuthenReply) marshal() ([]byte, error) {
 	size := 6
-	if len(a.ServerMsg) > math.MaxUint16 {
+	if len(a.ServerMsg) > maxUint16 {
 		return nil, errors.New("ServerMsg field too large")
 	}
 	size += len(a.ServerMsg)
-	if len(a.Data) > math.MaxUint16 {
+	if len(a.Data) > maxUint16 {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
@@ -294,11 +296,11 @@ func (a *authenContinue) flags() uint8 {
 
 func (a *authenContinue) marshal() ([]byte, error) {
 	size := 5
-	if len(a.UserMsg) > math.MaxUint16 {
+	if len(a.UserMsg) > maxUint16 {
 		return nil, errors.New("UserMsg field too large")
 	}
 	size += len(a.UserMsg)
-	if len(a.Data) > math.MaxUint16 {
+	if len(a.Data) > maxUint16 {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
@@ -343,25 +345,25 @@ type AuthorRequest struct {
 
 func (a *AuthorRequest) marshal() ([]byte, error) {
 	size := 8
-	if len(a.User) > math.MaxUint8 {
+	if len(a.User) > maxUint8 {
 		return nil, errors.New("User field too large")
 	}
 	size += len(a.User)
-	if len(a.Port) > math.MaxUint8 {
+	if len(a.Port) > maxUint8 {
 		return nil, errors.New("Port field too large")
 	}
 	size += len(a.Port)
-	if len(a.RemAddr) > math.MaxUint8 {
+	if len(a.RemAddr) > maxUint8 {
 		return nil, errors.New("RemAddr field too large")
 	}
 	size += len(a.RemAddr)
-	if len(a.Arg) > math.MaxUint8 {
+	if len(a.Arg) > maxUint8 {
 		return nil, errors.New("Too many Arg's")
 	}
 	size += len(a.Arg)
 
 	for _, s := range a.Arg {
-		if len(s) > math.MaxUint8 {
+		if len(s) > maxUint8 {
 			return nil, errors.New("Arg Too Long")
 		}
 		size += len(s)
@@ -423,21 +425,21 @@ type AuthorResponse struct {
 
 func (a *AuthorResponse) marshal() ([]byte, error) {
 	size := 6
-	if len(a.Arg) > math.MaxUint8 {
+	if len(a.Arg) > maxUint8 {
 		return nil, errors.New("Too many Arg's")
 	}
 	size += len(a.Arg)
-	if len(a.ServerMsg) > math.MaxUint16 {
+	if len(a.ServerMsg) > maxUint16 {
 		return nil, errors.New("ServerMsg field too large")
 	}
 	size += len(a.ServerMsg)
-	if len(a.Data) > math.MaxUint16 {
+	if len(a.Data) > maxUint16 {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
 
 	for _, s := range a.Arg {
-		if len(s) > math.MaxUint8 {
+		if len(s) > maxUint8 {
 			return nil, errors.New("Arg Too Long")
 		}
 		size += len(s)
@@ -498,25 +500,25 @@ type AcctRequest struct {
 
 func (a *AcctRequest) marshal() ([]byte, error) {
 	size := 9
-	if len(a.User) > math.MaxUint8 {
+	if len(a.User) > maxUint8 {
 		return nil, errors.New("User field too large")
 	}
 	size += len(a.User)
-	if len(a.Port) > math.MaxUint8 {
+	if len(a.Port) > maxUint8 {
 		return nil, errors.New("Port field too large")
 	}
 	size += len(a.Port)
-	if len(a.RemAddr) > math.MaxUint8 {
+	if len(a.RemAddr) > maxUint8 {
 		return nil, errors.New("RemAddr field too large")
 	}
 	size += len(a.RemAddr)
-	if len(a.Arg) > math.MaxUint8 {
+	if len(a.Arg) > maxUint8 {
 		return nil, errors.New("Too many Arg's")
 	}
 	size += len(a.Arg)
 
 	for _, s := range a.Arg {
-		if len(s) > math.MaxUint8 {
+		if len(s) > maxUint8 {
 			return nil, errors.New("Arg Too Long")
 		}
 		size += len(s)
@@ -578,11 +580,11 @@ type AcctReply struct {
 
 func (a *AcctReply) marshal() ([]byte, error) {
 	size := 5
-	if len(a.ServerMsg) > math.MaxUint16 {
+	if len(a.ServerMsg) > maxUint16 {
 		return nil, errors.New("ServerMsg field too large")
 	}
 	size += len(a.ServerMsg)
-	if len(a.Data) > math.MaxUint16 {
+	if len(a.Data) > maxUint16 {
 		return nil, errors.New("Data field too large")
 	}
 	size += len(a.Data)
