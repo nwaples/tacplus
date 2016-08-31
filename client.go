@@ -7,29 +7,29 @@ import (
 	"sync"
 )
 
-// ClientAuthenSession is a TACACS+ client authentication session.
-type ClientAuthenSession struct {
+// ClientSession is a TACACS+ client session.
+type ClientSession struct {
 	*session
 }
 
-// Close closes the client authentication session.
-func (c *ClientAuthenSession) Close() {
+// Close closes the client session.
+func (c *ClientSession) Close() {
 	c.close()
 }
 
 // Abort sends a message back to the server aborting the session with the supplied reason.
-func (c *ClientAuthenSession) Abort(ctx context.Context, reason string) error {
+func (c *ClientSession) Abort(ctx context.Context, reason string) error {
 	if len(reason) > maxUint16 {
 		reason = reason[:maxUint16]
 	}
-	err := c.writePacket(ctx, &authenContinue{Abort: true, Data: []byte(reason)})
+	err := c.sendRequest(ctx, &authenContinue{Abort: true, Data: []byte(reason)}, nil)
 	c.close()
 	return err
 }
 
 // Continue is used to send msg in response to a previous AuthenReply.
 // A new AuthenReply or error is returned.
-func (c *ClientAuthenSession) Continue(ctx context.Context, msg string) (*AuthenReply, error) {
+func (c *ClientSession) Continue(ctx context.Context, msg string) (*AuthenReply, error) {
 	// sequence number too large to continue
 	if c.seq >= 0xfe {
 		_ = c.Abort(ctx, "")
@@ -37,7 +37,7 @@ func (c *ClientAuthenSession) Continue(ctx context.Context, msg string) (*Authen
 	}
 
 	rep := new(AuthenReply)
-	if err := sendRequest(ctx, c.session, &authenContinue{UserMsg: msg}, rep); err != nil {
+	if err := c.sendRequest(ctx, &authenContinue{UserMsg: msg}, rep); err != nil {
 		c.close()
 		return nil, err
 	}
@@ -47,12 +47,12 @@ func (c *ClientAuthenSession) Continue(ctx context.Context, msg string) (*Authen
 	return rep, nil
 }
 
-func sendRequest(ctx context.Context, s *session, req, rep packet) error {
-	err := s.writePacket(ctx, req)
+func (c *ClientSession) sendRequest(ctx context.Context, req, rep packet) error {
+	err := c.writePacket(ctx, req)
 	if err != nil || rep == nil {
 		return err
 	}
-	return s.readPacket(ctx, rep)
+	return c.readPacket(ctx, rep)
 }
 
 // Client is a TACACS+ client that connects to a single TACACS+ server.
@@ -142,16 +142,17 @@ func (c *Client) newSession(ctx context.Context, ver, t uint8) (*session, error)
 	return s, nil
 }
 
-func (c *Client) startSession(ctx context.Context, ver, t uint8, req, rep packet) (*session, error) {
+func (c *Client) startSession(ctx context.Context, ver, t uint8, req, rep packet) (*ClientSession, error) {
 	s, err := c.newSession(ctx, ver, t)
 	if err != nil {
 		return nil, err
 	}
-	if err = sendRequest(ctx, s, req, rep); err != nil {
-		s.close()
+	cs := &ClientSession{s}
+	if err = cs.sendRequest(ctx, req, rep); err != nil {
+		cs.close()
 		return nil, err
 	}
-	return s, nil
+	return cs, nil
 }
 
 // SendAcctRequest sends an AcctRequest to the server returning an AcctReply or error.
@@ -177,9 +178,9 @@ func (c *Client) SendAuthorRequest(ctx context.Context, req *AuthorRequest) (*Au
 }
 
 // SendAuthenStart sends an AuthenStart to the server returning an AuthenReply and
-// optional ClientAuthenSession or an error. If ClientAuthenSession is set it should be
+// optional ClientSession or an error. If ClientSession is set it should be
 // used to complete the current interactive authentication session.
-func (c *Client) SendAuthenStart(ctx context.Context, as *AuthenStart) (*AuthenReply, *ClientAuthenSession, error) {
+func (c *Client) SendAuthenStart(ctx context.Context, as *AuthenStart) (*AuthenReply, *ClientSession, error) {
 	rep := new(AuthenReply)
 	s, err := c.startSession(ctx, as.version(), sessTypeAuthen, as, rep)
 	if err != nil {
@@ -189,5 +190,5 @@ func (c *Client) SendAuthenStart(ctx context.Context, as *AuthenStart) (*AuthenR
 		s.close()
 		return rep, nil, nil
 	}
-	return rep, &ClientAuthenSession{s}, nil
+	return rep, s, nil
 }
