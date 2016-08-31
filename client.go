@@ -10,10 +10,12 @@ import (
 // ClientSession is a TACACS+ client session.
 type ClientSession struct {
 	*session
+	p []byte
 }
 
 // Close closes the client session.
 func (c *ClientSession) Close() {
+	c.p = nil
 	c.close()
 }
 
@@ -23,7 +25,7 @@ func (c *ClientSession) Abort(ctx context.Context, reason string) error {
 		reason = reason[:maxUint16]
 	}
 	err := c.sendRequest(ctx, &authenContinue{Abort: true, Data: []byte(reason)}, nil)
-	c.close()
+	c.Close()
 	return err
 }
 
@@ -38,21 +40,32 @@ func (c *ClientSession) Continue(ctx context.Context, msg string) (*AuthenReply,
 
 	rep := new(AuthenReply)
 	if err := c.sendRequest(ctx, &authenContinue{UserMsg: msg}, rep); err != nil {
-		c.close()
+		c.Close()
 		return nil, err
 	}
 	if rep.last() {
-		c.close()
+		c.Close()
 	}
 	return rep, nil
 }
 
 func (c *ClientSession) sendRequest(ctx context.Context, req, rep packet) error {
-	err := c.writePacket(ctx, req)
+	if c.p == nil {
+		return errSessionClosed
+	}
+	p, err := req.marshal(c.p[:hdrLen])
+	if err != nil {
+		return err
+	}
+	err = c.writePacket(ctx, p)
 	if err != nil || rep == nil {
 		return err
 	}
-	return c.readPacket(ctx, rep)
+	c.p, err = c.readPacket(ctx)
+	if err == nil {
+		err = rep.unmarshal(c.p[hdrLen:])
+	}
+	return err
 }
 
 // Client is a TACACS+ client that connects to a single TACACS+ server.
@@ -147,7 +160,8 @@ func (c *Client) startSession(ctx context.Context, ver, t uint8, req, rep packet
 	if err != nil {
 		return nil, err
 	}
-	cs := &ClientSession{s}
+	p := make([]byte, 1024)
+	cs := &ClientSession{s, p}
 	if err = cs.sendRequest(ctx, req, rep); err != nil {
 		cs.close()
 		return nil, err

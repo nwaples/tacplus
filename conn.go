@@ -158,17 +158,17 @@ func (s *session) flags() uint8 {
 	return 0
 }
 
-func (s *session) readPacket(ctx context.Context, p packet) error {
+func (s *session) readPacket(ctx context.Context) ([]byte, error) {
 	var data []byte
 
 	// get raw packet from session in channel
 	select {
 	case data = <-s.in:
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 	if data == nil {
-		return s.readErr()
+		return nil, s.readErr()
 	}
 
 	// check sequence number
@@ -181,21 +181,21 @@ func (s *session) readPacket(ctx context.Context, p packet) error {
 		if nseq == 1 {
 			// new session, so packet is probably the result of a previous
 			// session timing out
-			return errSessionNotFound
+			return data, errSessionNotFound
 		}
-		return errInvalidSeqNo
+		return data, errInvalidSeqNo
 	}
 
 	// check parity of received packet
 	if seq&0x1 == s.c.parity {
-		return errInvalidSeqNo
+		return data, errInvalidSeqNo
 	}
 
 	crypt(data, s.c.Secret)
-	return p.unmarshal(data[hdrLen:])
+	return data, nil
 }
 
-func (s *session) writePacket(ctx context.Context, p packet) error {
+func (s *session) writePacket(ctx context.Context, data []byte) error {
 	// don't write on closed session
 	select {
 	case <-s.done:
@@ -203,10 +203,6 @@ func (s *session) writePacket(ctx context.Context, p packet) error {
 	default:
 	}
 
-	data, err := p.marshal(make([]byte, hdrLen, 1024))
-	if err != nil {
-		return err
-	}
 	s.seq++
 	// setup header fields
 	data[hdrVer] = s.version
@@ -622,7 +618,7 @@ func newConn(nc net.Conn, h func(*session), cfg ConnConfig) *conn {
 		c.sessReq = make(chan sessRequest)
 		c.parity = 1
 		c.handle = func(s *session) {
-			err := s.readPacket(context.Background(), &nullPacket{})
+			_, err := s.readPacket(context.Background())
 			if err != nil {
 				c.log(err)
 			}

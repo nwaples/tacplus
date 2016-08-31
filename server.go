@@ -47,6 +47,22 @@ func (s *ServerSession) sendReply(ctx context.Context, r *AuthenReply) (string, 
 	return "", err
 }
 
+func (s *ServerSession) readPacket(ctx context.Context, p packet) error {
+	data, err := s.session.readPacket(ctx)
+	if err != nil {
+		return err
+	}
+	return p.unmarshal(data[hdrLen:])
+}
+
+func (s *ServerSession) writePacket(ctx context.Context, p packet) error {
+	data, err := p.marshal(make([]byte, hdrLen, 1024))
+	if err != nil {
+		return err
+	}
+	return s.session.writePacket(ctx, data)
+}
+
 // GetData requests the TACACS+ client prompt the user for data with the given message.
 // If noEcho is set the client will not echo the users response as it is entered.
 func (s *ServerSession) GetData(ctx context.Context, message string, noEcho bool) (string, error) {
