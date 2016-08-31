@@ -105,7 +105,7 @@ type writeRequest struct {
 // session is a TACACS+ session
 type session struct {
 	id       uint32        // Session ID
-	seq      uint8         // last seen packet sequence number
+	seq      uint8         // sequence number of last written packet
 	version  uint8         // Protocol version
 	sessType uint8         // Session type
 	in       chan []byte   // Buffered channel for incoming raw packet
@@ -173,12 +173,10 @@ func (s *session) readPacket(ctx context.Context) ([]byte, error) {
 
 	// check sequence number
 	seq := p[hdrSeqNo] // packet seqno
-	nseq := s.seq + 1  // expected packet seqno
-	s.seq = seq        // save packet seqno
-	if nseq != seq {
+	if seq != s.seq+1 {
 		// sequence number not the same as expected
 
-		if nseq == 1 {
+		if s.seq == 0 {
 			// new session, so packet is probably the result of a previous
 			// session timing out
 			return p, errSessionNotFound
@@ -203,13 +201,11 @@ func (s *session) writePacket(ctx context.Context, p []byte) error {
 	default:
 	}
 
-	s.seq++
-	// setup header fields
-	p[hdrVer] = s.version
-	p[hdrType] = s.sessType
-	p[hdrSeqNo] = s.seq
+	p[hdrSeqNo]++
+	s.seq = p[hdrSeqNo]
+	// override flags
 	p[hdrFlags] = s.flags()
-	binary.BigEndian.PutUint32(p[hdrID:], s.id)
+	// set body size
 	binary.BigEndian.PutUint32(p[hdrBodyLen:], uint32(len(p)-hdrLen))
 	crypt(p, s.c.Secret)
 

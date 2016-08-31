@@ -2,6 +2,7 @@ package tacplus
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"net"
 	"sync"
@@ -161,6 +162,9 @@ func (c *Client) startSession(ctx context.Context, ver, t uint8, req, rep packet
 		return nil, err
 	}
 	p := make([]byte, 1024)
+	p[hdrVer] = ver
+	p[hdrType] = t
+	binary.BigEndian.PutUint32(p[hdrID:], s.id)
 	cs := &ClientSession{s, p}
 	if err = cs.sendRequest(ctx, req, rep); err != nil {
 		cs.close()
