@@ -104,13 +104,11 @@ type writeRequest struct {
 
 // session is a TACACS+ session
 type session struct {
-	id       uint32        // Session ID
-	seq      uint8         // sequence number of last written packet
-	version  uint8         // Protocol version
-	sessType uint8         // Session type
-	in       chan []byte   // Buffered channel for incoming raw packet
-	c        *conn         // Connection for session
-	done     chan struct{} // close channel to close session
+	id   uint32        // Session ID
+	seq  uint8         // sequence number of last written packet
+	in   chan []byte   // Buffered channel for incoming raw packet
+	c    *conn         // Connection for session
+	done chan struct{} // close channel to close session
 
 	mu  sync.Mutex // Guards the following
 	err error      // last seen error
@@ -232,8 +230,8 @@ func (s *session) writePacket(ctx context.Context, p []byte) error {
 	}
 }
 
-func newSession(c *conn, ver, t uint8, id uint32) *session {
-	s := &session{version: ver, sessType: t, id: id, c: c}
+func newSession(c *conn, id uint32) *session {
+	s := &session{id: id, c: c}
 	s.in = make(chan []byte, 1)
 	s.done = make(chan struct{})
 	return s
@@ -247,8 +245,6 @@ type sessReply struct {
 
 // sessRequest is a session create request
 type sessRequest struct {
-	t     uint8          // Type
-	ver   uint8          // Version
 	id    uint32         // Session ID
 	reply chan sessReply // result of request is sent to this channel
 }
@@ -320,7 +316,7 @@ func (c *conn) readErr() error {
 }
 
 // newClientSession is called by a client to create a new session.
-func (c *conn) newClientSession(ctx context.Context, ver, t uint8) (*session, error) {
+func (c *conn) newClientSession(ctx context.Context) (*session, error) {
 	for {
 		// obtain session id
 		b := make([]byte, 4)
@@ -330,7 +326,7 @@ func (c *conn) newClientSession(ctx context.Context, ver, t uint8) (*session, er
 		id := binary.BigEndian.Uint32(b)
 
 		// new session request
-		req := sessRequest{t: t, ver: ver, id: id, reply: make(chan sessReply)}
+		req := sessRequest{id: id, reply: make(chan sessReply)}
 
 		// send session create request to connection
 		select {
@@ -500,7 +496,7 @@ func (c *conn) getSession(p []byte) *session {
 	}
 
 	// create session
-	s = newSession(c, p[hdrVer], p[hdrType], id)
+	s = newSession(c, id)
 	c.sess[id] = s
 	// start session handler goroutine
 	go c.handle(s)
@@ -521,7 +517,7 @@ func (c *conn) newSession(sr sessRequest, mux bool) {
 		// Return error and allow connection to close.
 		r.err = errConnectionClosed
 	} else {
-		r.s = newSession(c, sr.ver, sr.t, sr.id)
+		r.s = newSession(c, sr.id)
 		c.sess[sr.id] = r.s
 	}
 	sr.reply <- r

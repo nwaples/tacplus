@@ -103,14 +103,14 @@ func (c *Client) dial(ctx context.Context) (net.Conn, error) {
 	return zeroDialer.DialContext(ctx, "tcp", c.Addr)
 }
 
-func (c *Client) newSession(ctx context.Context, ver, t uint8) (*session, error) {
+func (c *Client) newSession(ctx context.Context) (*session, error) {
 	if c.ConnConfig.Mux {
 		// try to use existing cached connection
 		c.mu.Lock()
 		conn := c.conn
 		c.mu.Unlock()
 		if conn != nil {
-			if s, _ := conn.newClientSession(ctx, ver, t); s != nil {
+			if s, _ := conn.newClientSession(ctx); s != nil {
 				return s, nil
 			}
 		}
@@ -124,7 +124,7 @@ func (c *Client) newSession(ctx context.Context, ver, t uint8) (*session, error)
 	conn := newConn(nc, nil, c.ConnConfig)
 	go conn.serve()
 
-	s, err := conn.newClientSession(ctx, ver, t)
+	s, err := conn.newClientSession(ctx)
 	if err != nil {
 		conn.close()
 		return nil, err
@@ -157,7 +157,7 @@ func (c *Client) newSession(ctx context.Context, ver, t uint8) (*session, error)
 }
 
 func (c *Client) startSession(ctx context.Context, ver, t uint8, req, rep packet) (*ClientSession, error) {
-	s, err := c.newSession(ctx, ver, t)
+	s, err := c.newSession(ctx)
 	if err != nil {
 		return nil, err
 	}
