@@ -159,43 +159,43 @@ func (s *session) flags() uint8 {
 }
 
 func (s *session) readPacket(ctx context.Context) ([]byte, error) {
-	var data []byte
+	var p []byte
 
 	// get raw packet from session in channel
 	select {
-	case data = <-s.in:
+	case p = <-s.in:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	if data == nil {
+	if p == nil {
 		return nil, s.readErr()
 	}
 
 	// check sequence number
-	seq := data[hdrSeqNo] // packet seqno
-	nseq := s.seq + 1     // expected packet seqno
-	s.seq = seq           // save packet seqno
+	seq := p[hdrSeqNo] // packet seqno
+	nseq := s.seq + 1  // expected packet seqno
+	s.seq = seq        // save packet seqno
 	if nseq != seq {
 		// sequence number not the same as expected
 
 		if nseq == 1 {
 			// new session, so packet is probably the result of a previous
 			// session timing out
-			return data, errSessionNotFound
+			return p, errSessionNotFound
 		}
-		return data, errInvalidSeqNo
+		return p, errInvalidSeqNo
 	}
 
 	// check parity of received packet
 	if seq&0x1 == s.c.parity {
-		return data, errInvalidSeqNo
+		return p, errInvalidSeqNo
 	}
 
-	crypt(data, s.c.Secret)
-	return data, nil
+	crypt(p, s.c.Secret)
+	return p, nil
 }
 
-func (s *session) writePacket(ctx context.Context, data []byte) error {
+func (s *session) writePacket(ctx context.Context, p []byte) error {
 	// don't write on closed session
 	select {
 	case <-s.done:
@@ -205,15 +205,15 @@ func (s *session) writePacket(ctx context.Context, data []byte) error {
 
 	s.seq++
 	// setup header fields
-	data[hdrVer] = s.version
-	data[hdrType] = s.sessType
-	data[hdrSeqNo] = s.seq
-	data[hdrFlags] = s.flags()
-	binary.BigEndian.PutUint32(data[hdrID:], s.id)
-	binary.BigEndian.PutUint32(data[hdrBodyLen:], uint32(len(data)-hdrLen))
-	crypt(data, s.c.Secret)
+	p[hdrVer] = s.version
+	p[hdrType] = s.sessType
+	p[hdrSeqNo] = s.seq
+	p[hdrFlags] = s.flags()
+	binary.BigEndian.PutUint32(p[hdrID:], s.id)
+	binary.BigEndian.PutUint32(p[hdrBodyLen:], uint32(len(p)-hdrLen))
+	crypt(p, s.c.Secret)
 
-	wr := writeRequest{p: data, ec: make(chan error, 1)}
+	wr := writeRequest{p: p, ec: make(chan error, 1)}
 	if deadline, ok := ctx.Deadline(); ok {
 		wr.deadline = deadline
 	}
