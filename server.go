@@ -9,17 +9,17 @@ import (
 	"time"
 )
 
-// ServerAuthenSession is a TACACS+ Server Authentication Session.
-type ServerAuthenSession struct {
+// ServerSession is a TACACS+ Server Session.
+type ServerSession struct {
 	*session
 }
 
 // Log output using the connections ConnConfig Log function.
-func (s *ServerAuthenSession) Log(v ...interface{}) {
+func (s *ServerSession) Log(v ...interface{}) {
 	s.c.log(v...)
 }
 
-func (s *ServerAuthenSession) sendReply(ctx context.Context, r *AuthenReply) (string, error) {
+func (s *ServerSession) sendReply(ctx context.Context, r *AuthenReply) (string, error) {
 	//if s.seq > 0xfb {
 	//	return "", errors.New("operation will cause sequence number to overlap")
 	//}
@@ -49,19 +49,19 @@ func (s *ServerAuthenSession) sendReply(ctx context.Context, r *AuthenReply) (st
 
 // GetData requests the TACACS+ client prompt the user for data with the given message.
 // If noEcho is set the client will not echo the users response as it is entered.
-func (s *ServerAuthenSession) GetData(ctx context.Context, message string, noEcho bool) (string, error) {
+func (s *ServerSession) GetData(ctx context.Context, message string, noEcho bool) (string, error) {
 	r := &AuthenReply{Status: AuthenStatusGetData, ServerMsg: message, NoEcho: noEcho}
 	return s.sendReply(ctx, r)
 }
 
 // GetUser requests the TACACS+ client prompt the user for a username with the given message.
-func (s *ServerAuthenSession) GetUser(ctx context.Context, message string) (string, error) {
+func (s *ServerSession) GetUser(ctx context.Context, message string) (string, error) {
 	r := &AuthenReply{Status: AuthenStatusGetUser, ServerMsg: message}
 	return s.sendReply(ctx, r)
 }
 
 // GetPass requests the TACACS+ client prompt the user for a password with the given message.
-func (s *ServerAuthenSession) GetPass(ctx context.Context, message string) (string, error) {
+func (s *ServerSession) GetPass(ctx context.Context, message string) (string, error) {
 	r := &AuthenReply{Status: AuthenStatusGetPass, ServerMsg: message, NoEcho: true}
 	return s.sendReply(ctx, r)
 }
@@ -74,14 +74,14 @@ func (s *ServerAuthenSession) GetPass(ctx context.Context, message string) (stri
 // is closed.
 //
 // HandleAuthenStart processes an authentication start, returning an optional reply.
-// The ServerAuthenSession can be used by interactive sessions to prompt the user for more
+// The ServerSession can be used by interactive sessions to prompt the user for more
 // information before the final reply is returned.
 //
 // HandleAuthorRequest processes an authorization request, returning an optional response.
 //
 // HandleAcctRequest processes an accounting request, returning an optional reply.
 type RequestHandler interface {
-	HandleAuthenStart(ctx context.Context, a *AuthenStart, s *ServerAuthenSession) *AuthenReply
+	HandleAuthenStart(ctx context.Context, a *AuthenStart, s *ServerSession) *AuthenReply
 	HandleAuthorRequest(ctx context.Context, a *AuthorRequest) *AuthorResponse
 	HandleAcctRequest(ctx context.Context, a *AcctRequest) *AcctReply
 }
@@ -92,7 +92,7 @@ type ServerConnHandler struct {
 	ConnConfig ConnConfig     // TACACS+ connection config
 }
 
-func (h *ServerConnHandler) serveAuthenSession(s *session) (packet, error) {
+func (h *ServerConnHandler) serveAuthenSession(s *ServerSession) (packet, error) {
 	as := new(AuthenStart)
 	err := s.readPacket(context.Background(), as)
 	if s.version != as.version() {
@@ -101,13 +101,13 @@ func (h *ServerConnHandler) serveAuthenSession(s *session) (packet, error) {
 	if err != nil {
 		return &AuthenReply{Status: AuthenStatusError, ServerMsg: err.Error()}, err
 	}
-	if reply := h.Handler.HandleAuthenStart(s.context(), as, &ServerAuthenSession{s}); reply != nil {
+	if reply := h.Handler.HandleAuthenStart(s.context(), as, s); reply != nil {
 		return reply, nil
 	}
 	return nil, nil
 }
 
-func (h *ServerConnHandler) serveAuthorSession(s *session) (packet, error) {
+func (h *ServerConnHandler) serveAuthorSession(s *ServerSession) (packet, error) {
 	ar := new(AuthorRequest)
 	err := s.readPacket(context.Background(), ar)
 	if s.version != verDefault {
@@ -122,7 +122,7 @@ func (h *ServerConnHandler) serveAuthorSession(s *session) (packet, error) {
 	return nil, nil
 }
 
-func (h *ServerConnHandler) serveAcctSession(s *session) (packet, error) {
+func (h *ServerConnHandler) serveAcctSession(s *ServerSession) (packet, error) {
 	ar := new(AcctRequest)
 	err := s.readPacket(context.Background(), ar)
 	if s.version != verDefault {
@@ -137,7 +137,10 @@ func (h *ServerConnHandler) serveAcctSession(s *session) (packet, error) {
 	return nil, nil
 }
 
-func (h *ServerConnHandler) serveSession(s *session) {
+func (h *ServerConnHandler) serveSession(sess *session) {
+	s := &ServerSession{sess}
+	defer s.close()
+
 	var reply packet
 	var err error
 	switch s.sessType {
@@ -163,7 +166,6 @@ func (h *ServerConnHandler) serveSession(s *session) {
 			s.c.log(err)
 		}
 	}
-	s.close()
 }
 
 // Serve processes incoming TACACS+ requests on the network connection nc.
