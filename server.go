@@ -12,6 +12,7 @@ import (
 // ServerSession is a TACACS+ Server Session.
 type ServerSession struct {
 	*session
+	p []byte
 }
 
 // Log output using the connections ConnConfig Log function.
@@ -19,48 +20,69 @@ func (s *ServerSession) Log(v ...interface{}) {
 	s.c.log(v...)
 }
 
+func (s *ServerSession) close() {
+	s.p = nil
+	s.session.close()
+}
+
+func (s *ServerSession) sendError(ctx context.Context, err error) {
+	if s.p == nil {
+		return
+	}
+	msg := err.Error()
+	if len(msg) > maxUint16 {
+		msg = msg[:maxUint16]
+	}
+	p := s.p[:hdrLen]
+	switch p[hdrType] {
+	case sessTypeAuthen:
+		r := AuthenReply{Status: AuthenStatusError, ServerMsg: msg}
+		p, _ = r.marshal(p)
+	case sessTypeAuthor:
+		r := AuthorResponse{Status: AuthorStatusError, ServerMsg: msg}
+		p, _ = r.marshal(p)
+	case sessTypeAcct:
+		r := AcctReply{Status: AcctStatusError, ServerMsg: msg}
+		p, _ = r.marshal(p)
+	}
+	if err = s.writePacket(ctx, p); err != nil {
+		s.c.log(err)
+	}
+	s.close()
+}
+
 func (s *ServerSession) sendReply(ctx context.Context, r *AuthenReply) (string, error) {
+	if s.p == nil {
+		return "", errSessionClosed
+	}
 	//if s.seq > 0xfb {
 	//	return "", errors.New("operation will cause sequence number to overlap")
 	//}
-	err := s.writePacket(ctx, r)
+	p, err := r.marshal(s.p[:hdrLen])
 	if err != nil {
 		return "", err
 	}
+	err = s.writePacket(ctx, p)
+	if err != nil {
+		s.close()
+		return "", err
+	}
+	s.p, err = s.readPacket(ctx)
+	if err != nil {
+		s.sendError(ctx, err)
+		return "", err
+	}
 	c := new(authenContinue)
-	err = s.readPacket(ctx, c)
-	switch err {
-	case nil:
-		if c.Abort {
-			s.close()
-			return "", errors.New("Session Aborted: " + string(c.Data))
-		}
-		return c.UserMsg, nil
-	case errSessionClosed, context.Canceled, context.DeadlineExceeded:
-	default:
-		r := &AuthenReply{Status: AuthenStatusError, ServerMsg: err.Error()}
-		if werr := s.writePacket(ctx, r); werr != nil {
-			s.c.log(werr)
-		}
-	}
-	s.close()
-	return "", err
-}
-
-func (s *ServerSession) readPacket(ctx context.Context, p packet) error {
-	data, err := s.session.readPacket(ctx)
+	err = c.unmarshal(s.p[hdrLen:])
 	if err != nil {
-		return err
+		s.sendError(ctx, err)
+		return "", err
 	}
-	return p.unmarshal(data[hdrLen:])
-}
-
-func (s *ServerSession) writePacket(ctx context.Context, p packet) error {
-	data, err := p.marshal(make([]byte, hdrLen, 1024))
-	if err != nil {
-		return err
+	if c.Abort {
+		s.close()
+		return "", errors.New("Session Aborted: " + string(c.Data))
 	}
-	return s.session.writePacket(ctx, data)
+	return c.UserMsg, nil
 }
 
 // GetData requests the TACACS+ client prompt the user for data with the given message.
@@ -108,76 +130,106 @@ type ServerConnHandler struct {
 	ConnConfig ConnConfig     // TACACS+ connection config
 }
 
-func (h *ServerConnHandler) serveAuthenSession(s *ServerSession) (packet, error) {
+func (h *ServerConnHandler) handleAuthenStart(ctx context.Context, s *ServerSession) ([]byte, error) {
 	as := new(AuthenStart)
-	err := s.readPacket(context.Background(), as)
-	if s.version != as.version() {
-		err = fmt.Errorf("unsupported authentication minor version %d", s.version&0xf)
-	}
+	err := as.unmarshal(s.p[hdrLen:])
 	if err != nil {
-		return &AuthenReply{Status: AuthenStatusError, ServerMsg: err.Error()}, err
+		return s.p, err
 	}
-	if reply := h.Handler.HandleAuthenStart(s.context(), as, s); reply != nil {
-		return reply, nil
+	v := as.version()
+	if s.p[hdrVer] != v {
+		err = fmt.Errorf("unsupported authentication minor version %d", s.p[hdrVer]&0xf)
+		s.p[hdrVer] = v
+		return s.p, err
 	}
-	return nil, nil
+	reply := h.Handler.HandleAuthenStart(s.context(), as, s)
+	if reply == nil {
+		return nil, nil
+	}
+	s.p, err = reply.marshal(s.p[:hdrLen])
+	if err != nil {
+		err = fmt.Errorf("Bad Server AuthenReply: %s", err)
+	}
+	return s.p, err
 }
 
-func (h *ServerConnHandler) serveAuthorSession(s *ServerSession) (packet, error) {
+func (h *ServerConnHandler) handleAuthorRequest(ctx context.Context, p []byte) ([]byte, error) {
 	ar := new(AuthorRequest)
-	err := s.readPacket(context.Background(), ar)
-	if s.version != verDefault {
-		err = fmt.Errorf("unsupported authorization minor version %d", s.version&0xf)
-	}
+	err := ar.unmarshal(p[hdrLen:])
 	if err != nil {
-		return &AuthorResponse{Status: AuthorStatusError, ServerMsg: err.Error()}, err
+		return p, err
 	}
-	if reply := h.Handler.HandleAuthorRequest(s.context(), ar); reply != nil {
-		return reply, nil
+	if p[hdrVer] != verDefault {
+		err = fmt.Errorf("unsupported authorization minor version %d", p[hdrVer]&0xf)
+		p[hdrVer] = verDefault
+		return p, err
 	}
-	return nil, nil
+	reply := h.Handler.HandleAuthorRequest(ctx, ar)
+	if reply == nil {
+		return nil, nil
+	}
+	p, err = reply.marshal(p[:hdrLen])
+	if err != nil {
+		err = fmt.Errorf("Bad Server AuthorResponse: %s", err)
+	}
+	return p, err
 }
 
-func (h *ServerConnHandler) serveAcctSession(s *ServerSession) (packet, error) {
+func (h *ServerConnHandler) handleAcctRequest(ctx context.Context, p []byte) ([]byte, error) {
 	ar := new(AcctRequest)
-	err := s.readPacket(context.Background(), ar)
-	if s.version != verDefault {
-		err = fmt.Errorf("unsupported accounting minor version %d", s.version&0xf)
-	}
+	err := ar.unmarshal(p[hdrLen:])
 	if err != nil {
-		return &AcctReply{Status: AcctStatusError, ServerMsg: err.Error()}, err
+		return p, err
 	}
-	if reply := h.Handler.HandleAcctRequest(s.context(), ar); reply != nil {
-		return reply, nil
+	if p[hdrVer] != verDefault {
+		err = fmt.Errorf("unsupported accounting minor version %d", p[hdrVer]&0xf)
+		p[hdrVer] = verDefault
+		return p, err
 	}
-	return nil, nil
+	reply := h.Handler.HandleAcctRequest(ctx, ar)
+	if reply == nil {
+		return nil, nil
+	}
+	p, err = reply.marshal(p[:hdrLen])
+	if err != nil {
+		err = fmt.Errorf("Bad Server AcctReply: %s", err)
+	}
+	return p, err
 }
 
 func (h *ServerConnHandler) serveSession(sess *session) {
-	s := &ServerSession{sess}
+	var err error
+
+	s := &ServerSession{sess, nil}
 	defer s.close()
 
-	var reply packet
-	var err error
-	switch s.sessType {
-	case sessTypeAuthen:
-		reply, err = h.serveAuthenSession(s)
-	case sessTypeAuthor:
-		reply, err = h.serveAuthorSession(s)
-	case sessTypeAcct:
-		reply, err = h.serveAcctSession(s)
-	default:
-		// error reply for an unknown session type is just an empty packet
-		reply = new(nullPacket)
-		if err = s.readPacket(context.Background(), reply); err == nil {
-			err = fmt.Errorf("invalid session type %d", s.sessType)
-		}
-	}
+	ctx := context.Background()
+	s.p, err = s.readPacket(ctx)
 	if err != nil {
 		s.c.log(err)
+		s.sendError(ctx, err)
+		return
 	}
-	if reply != nil {
-		err = s.writePacket(context.Background(), reply)
+
+	switch s.p[hdrType] {
+	case sessTypeAuthen:
+		s.p, err = h.handleAuthenStart(s.context(), s)
+	case sessTypeAuthor:
+		s.p, err = h.handleAuthorRequest(s.context(), s.p)
+	case sessTypeAcct:
+		s.p, err = h.handleAcctRequest(s.context(), s.p)
+	default:
+		err = fmt.Errorf("invalid session type %d", s.p[hdrType])
+	}
+
+	if err != nil {
+		s.c.log(err)
+		s.sendError(ctx, err)
+		return
+	}
+
+	if s.p != nil {
+		err = s.writePacket(ctx, s.p)
 		if err != nil {
 			s.c.log(err)
 		}
