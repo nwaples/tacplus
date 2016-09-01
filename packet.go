@@ -270,49 +270,53 @@ func (a *AuthenReply) unmarshal(buf []byte) error {
 	return nil
 }
 
-// authenContinue is a TACACS+ authentication continue packet.
-type authenContinue struct {
-	Abort   bool
-	UserMsg string
-	Data    []byte
+// AuthenContinue represents a TACACS+ authentication continue packet.
+type AuthenContinue struct {
+	Abort   bool   // session aborted
+	Message string // reply from user or abort reason if Abort set
 }
 
-func (a *authenContinue) flags() uint8 {
+func (a *AuthenContinue) flags() uint8 {
 	if a.Abort {
 		return authenContinueFlagAbort
 	}
 	return 0
 }
 
-func (a *authenContinue) marshal(b []byte) ([]byte, error) {
-	if len(a.UserMsg) > maxUint16 {
-		return b, errors.New("UserMsg field too large")
+func (a *AuthenContinue) marshal(b []byte) ([]byte, error) {
+	if len(a.Message) > maxUint16 {
+		return b, errors.New("Message field too large")
 	}
-	if len(a.Data) > maxUint16 {
-		return b, errors.New("Data field too large")
+	if a.Abort {
+		b = appendUint16(b, 0, len(a.Message))
+	} else {
+		b = appendUint16(b, len(a.Message), 0)
 	}
-
-	b = appendUint16(b, len(a.UserMsg), len(a.Data))
 	b = append(b, a.flags())
-	b = append(b, a.UserMsg...)
-	b = append(b, a.Data...)
+	b = append(b, a.Message...)
 
 	return b, nil
 }
 
-func (a *authenContinue) unmarshal(buf []byte) error {
+func (a *AuthenContinue) unmarshal(buf []byte) error {
 	b := readBuf(buf)
 	if len(b) < 5 {
 		return errBadPacket
 	}
-	ul := b.uint16()
+	ml := b.uint16()
 	dl := b.uint16()
 	a.Abort = b.byte()&authenContinueFlagAbort > 0
-	if len(b) < ul+dl {
+	if len(b) < ml+dl {
 		return errBadPacket
 	}
-	a.UserMsg = b.string(ul)
-	a.Data = b.bytes(dl)
+
+	msg := b.string(ml)
+	data := b.string(dl)
+	if a.Abort {
+		a.Message = data
+	} else {
+		a.Message = msg
+	}
 
 	return nil
 }

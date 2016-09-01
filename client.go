@@ -25,7 +25,7 @@ func (c *ClientSession) Abort(ctx context.Context, reason string) error {
 	if len(reason) > maxUint16 {
 		reason = reason[:maxUint16]
 	}
-	err := c.sendRequest(ctx, &authenContinue{Abort: true, Data: []byte(reason)}, nil)
+	err := c.sendRequest(ctx, &AuthenContinue{Abort: true, Message: reason}, nil)
 	c.Close()
 	return err
 }
@@ -40,7 +40,7 @@ func (c *ClientSession) Continue(ctx context.Context, msg string) (*AuthenReply,
 	}
 
 	rep := new(AuthenReply)
-	if err := c.sendRequest(ctx, &authenContinue{UserMsg: msg}, rep); err != nil {
+	if err := c.sendRequest(ctx, &AuthenContinue{Message: msg}, rep); err != nil {
 		c.Close()
 		return nil, err
 	}

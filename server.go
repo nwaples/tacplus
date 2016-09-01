@@ -2,7 +2,6 @@ package tacplus
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -51,55 +50,51 @@ func (s *ServerSession) sendError(ctx context.Context, err error) {
 	s.close()
 }
 
-func (s *ServerSession) sendReply(ctx context.Context, r *AuthenReply) (string, error) {
+func (s *ServerSession) sendReply(ctx context.Context, r *AuthenReply) (*AuthenContinue, error) {
 	if s.p == nil {
-		return "", errSessionClosed
+		return nil, errSessionClosed
 	}
 	//if s.seq > 0xfb {
-	//	return "", errors.New("operation will cause sequence number to overlap")
+	//	return nil errors.New("operation will cause sequence number to overlap")
 	//}
 	p, err := r.marshal(s.p[:hdrLen])
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	err = s.writePacket(ctx, p)
 	if err != nil {
 		s.close()
-		return "", err
+		return nil, err
 	}
 	s.p, err = s.readPacket(ctx)
 	if err != nil {
 		s.sendError(ctx, err)
-		return "", err
+		return nil, err
 	}
-	c := new(authenContinue)
+	c := new(AuthenContinue)
 	err = c.unmarshal(s.p[hdrLen:])
 	if err != nil {
 		s.sendError(ctx, err)
-		return "", err
+		return nil, err
 	}
-	if c.Abort {
-		s.close()
-		return "", errors.New("Session Aborted: " + string(c.Data))
-	}
-	return c.UserMsg, nil
+	return c, nil
 }
 
 // GetData requests the TACACS+ client prompt the user for data with the given message.
 // If noEcho is set the client will not echo the users response as it is entered.
-func (s *ServerSession) GetData(ctx context.Context, message string, noEcho bool) (string, error) {
+func (s *ServerSession) GetData(ctx context.Context, message string, noEcho bool) (*AuthenContinue, error) {
 	r := &AuthenReply{Status: AuthenStatusGetData, ServerMsg: message, NoEcho: noEcho}
 	return s.sendReply(ctx, r)
 }
 
 // GetUser requests the TACACS+ client prompt the user for a username with the given message.
-func (s *ServerSession) GetUser(ctx context.Context, message string) (string, error) {
+func (s *ServerSession) GetUser(ctx context.Context, message string) (*AuthenContinue, error) {
 	r := &AuthenReply{Status: AuthenStatusGetUser, ServerMsg: message}
 	return s.sendReply(ctx, r)
 }
 
 // GetPass requests the TACACS+ client prompt the user for a password with the given message.
-func (s *ServerSession) GetPass(ctx context.Context, message string) (string, error) {
+func (s *ServerSession) GetPass(ctx context.Context, message string) (*AuthenContinue, error) {
 	r := &AuthenReply{Status: AuthenStatusGetPass, ServerMsg: message, NoEcho: true}
 	return s.sendReply(ctx, r)
 }
