@@ -167,7 +167,7 @@ func (a *AuthenStart) version() uint8 {
 	return verDefault
 }
 
-func (a *AuthenStart) marshal(b []byte) ([]byte, error) {
+func (a AuthenStart) marshal(b []byte) ([]byte, error) {
 	if len(a.User) > maxUint8 {
 		return b, errors.New("User field too large")
 	}
@@ -235,7 +235,7 @@ func (a *AuthenReply) flags() uint8 {
 	return 0
 }
 
-func (a *AuthenReply) marshal(b []byte) ([]byte, error) {
+func (a AuthenReply) marshal(b []byte) ([]byte, error) {
 	if len(a.ServerMsg) > maxUint16 {
 		return b, errors.New("ServerMsg field too large")
 	}
@@ -283,7 +283,7 @@ func (a *AuthenContinue) flags() uint8 {
 	return 0
 }
 
-func (a *AuthenContinue) marshal(b []byte) ([]byte, error) {
+func (a AuthenContinue) marshal(b []byte) ([]byte, error) {
 	if len(a.Message) > maxUint16 {
 		return b, errors.New("Message field too large")
 	}
@@ -333,7 +333,7 @@ type AuthorRequest struct {
 	Arg           []string
 }
 
-func (a *AuthorRequest) marshal(b []byte) ([]byte, error) {
+func (a AuthorRequest) marshal(b []byte) ([]byte, error) {
 	if len(a.User) > maxUint8 {
 		return b, errors.New("User field too large")
 	}
@@ -406,7 +406,7 @@ type AuthorResponse struct {
 	Data      string
 }
 
-func (a *AuthorResponse) marshal(b []byte) ([]byte, error) {
+func (a AuthorResponse) marshal(b []byte) ([]byte, error) {
 	if len(a.Arg) > maxUint8 {
 		return b, errors.New("Too many Arg's")
 	}
@@ -475,7 +475,7 @@ type AcctRequest struct {
 	Arg           []string
 }
 
-func (a *AcctRequest) marshal(b []byte) ([]byte, error) {
+func (a AcctRequest) marshal(b []byte) ([]byte, error) {
 	if len(a.User) > maxUint8 {
 		return b, errors.New("User field too large")
 	}
@@ -548,7 +548,7 @@ type AcctReply struct {
 	Data      string
 }
 
-func (a *AcctReply) marshal(b []byte) ([]byte, error) {
+func (a AcctReply) marshal(b []byte) ([]byte, error) {
 	if len(a.ServerMsg) > maxUint16 {
 		return b, errors.New("ServerMsg field too large")
 	}
@@ -583,5 +583,5 @@ func (a *AcctReply) unmarshal(buf []byte) error {
 // nullPacket represents an empty packet.
 type nullPacket struct{}
 
-func (p *nullPacket) marshal(b []byte) ([]byte, error) { return b, nil }
-func (p *nullPacket) unmarshal(buf []byte) error       { return nil }
+func (p nullPacket) marshal(b []byte) ([]byte, error) { return b, nil }
+func (p *nullPacket) unmarshal(buf []byte) error      { return nil }
