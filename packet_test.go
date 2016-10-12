@@ -71,11 +71,8 @@ func TestPacketMarshalUnmarshal(t *testing.T) {
 		err = p2.unmarshal(b)
 		if err != nil {
 			t.Error("unmarshal of", tp.Name(), p, "failed:", err)
-			continue
-		}
-		if !reflect.DeepEqual(p, p2) {
+		} else if !reflect.DeepEqual(p, p2) {
 			t.Error(p2, "!=", p)
-			continue
 		}
 	}
 }
