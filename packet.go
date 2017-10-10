@@ -75,9 +75,9 @@ const (
 const (
 	AuthorStatusPassAdd  = 0x1
 	AuthorStatusPassRepl = 0x2
-	AuthorStatusFail     = 0x3
-	AuthorStatusError    = 0x4
-	AuthorStatusFollow   = 0x5
+	AuthorStatusFail     = 0x10
+	AuthorStatusError    = 0x11
+	AuthorStatusFollow   = 0x21
 )
 
 // AcctRequest Flags field values
