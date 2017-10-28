@@ -149,13 +149,6 @@ func (s *session) context() context.Context {
 	return doneContext(s.done)
 }
 
-func (s *session) flags() uint8 {
-	if s.c.Mux {
-		return hdrFlagSingleConnect
-	}
-	return 0
-}
-
 func (s *session) readPacket(ctx context.Context) ([]byte, error) {
 	var p []byte
 
@@ -201,8 +194,23 @@ func (s *session) writePacket(ctx context.Context, p []byte) error {
 
 	p[hdrSeqNo]++
 	s.seq = p[hdrSeqNo]
-	// override flags
-	p[hdrFlags] = s.flags()
+	// Set the header flags in the first packet written. The remaining packets
+	// will just use the flags from the previous packet received.
+	switch s.seq {
+	case 1:
+		// set flags for first client packet sent.
+		if s.c.Mux {
+			p[hdrFlags] = hdrFlagSingleConnect
+		}
+	case 2:
+		// set flags for first server packet sent.
+		if s.c.Mux {
+			p[hdrFlags] &= hdrFlagSingleConnect
+		} else {
+			p[hdrFlags] = 0
+		}
+	}
+
 	// set body size
 	binary.BigEndian.PutUint32(p[hdrBodyLen:], uint32(len(p)-hdrLen))
 	crypt(p, s.c.Secret)
