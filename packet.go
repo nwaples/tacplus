@@ -579,9 +579,3 @@ func (a *AcctReply) unmarshal(buf []byte) error {
 	a.Data = b.string(dl)
 	return nil
 }
-
-// nullPacket represents an empty packet.
-type nullPacket struct{}
-
-func (p nullPacket) marshal(b []byte) ([]byte, error) { return b, nil }
-func (p *nullPacket) unmarshal(buf []byte) error      { return nil }

@@ -67,17 +67,6 @@ var (
 		RemAddr:       "1.2.3.4",
 	}
 
-	testPAPLogin = &AuthenStart{
-		Action:        AuthenActionLogin,
-		AuthenType:    AuthenTypeCHAP,
-		AuthenService: AuthenServicePPP,
-		PrivLvl:       1,
-		User:          "fred",
-		Port:          "tty123",
-		RemAddr:       "1.2.3.4",
-		Data:          []byte("@password@"),
-	}
-
 	timeScale = 20 * time.Millisecond
 )
 

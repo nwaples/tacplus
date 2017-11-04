@@ -32,7 +32,6 @@ const (
 	hdrBodyLen = 8
 
 	// Packet header flags
-	hdrFlagUnencrypted   = 0x01 // packet body not encrypted
 	hdrFlagSingleConnect = 0x04 // multiplex requests over a single connection
 )
 

@@ -56,7 +56,6 @@ var marshalUnmarshalTests = []packet{
 		ServerMsg: "user log message",
 		Data:      "admin log message",
 	},
-	&nullPacket{},
 }
 
 func TestPacketMarshalUnmarshal(t *testing.T) {
