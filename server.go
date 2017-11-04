@@ -24,6 +24,19 @@ func (s *ServerSession) close() {
 	s.session.close()
 }
 
+func (s *ServerSession) writePacket(ctx context.Context, p []byte) error {
+	if p[hdrSeqNo] == 1 {
+		// Set single connect header flag in the first reply packet for the session.
+		// Set it even in LegacyMux to allow normal Mux client connections to multiplex.
+		if s.c.Mux || s.c.LegacyMux {
+			p[hdrFlags] &= hdrFlagSingleConnect
+		} else {
+			p[hdrFlags] = 0
+		}
+	}
+	return s.session.writePacket(ctx, p)
+}
+
 func (s *ServerSession) sendError(ctx context.Context, err error) {
 	if s.p == nil {
 		return

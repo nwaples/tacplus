@@ -194,22 +194,6 @@ func (s *session) writePacket(ctx context.Context, p []byte) error {
 
 	p[hdrSeqNo]++
 	s.seq = p[hdrSeqNo]
-	// Set the header flags in the first packet written. The remaining packets
-	// will just use the flags from the previous packet received.
-	switch s.seq {
-	case 1:
-		// set flags for first client packet sent.
-		if s.c.Mux {
-			p[hdrFlags] = hdrFlagSingleConnect
-		}
-	case 2:
-		// set flags for first server packet sent.
-		if s.c.Mux {
-			p[hdrFlags] &= hdrFlagSingleConnect
-		} else {
-			p[hdrFlags] = 0
-		}
-	}
 
 	// set body size
 	binary.BigEndian.PutUint32(p[hdrBodyLen:], uint32(len(p)-hdrLen))
@@ -258,10 +242,28 @@ type sessRequest struct {
 }
 
 // ConnConfig specifies configuration parameters for a TACACS+ connection.
+//
+// Setting Mux or LegacyMux allows multiplexing multiple sessions over a single network connection.
+//
+// Mux allows mutliplexing only if the client and server set the single-connection header flag, as described
+// in https://tools.ietf.org/html/draft-grant-tacacs-02.
+//
+// LegacyMux assumes both ends allow multiplexing and doesn't set the single-connection header flag.
+// LegacyMux overrides Mux if both are set.
+//
+// A mismatch between the client and server on the multiplex type can cause problems. This software
+// tries to deal gracefully with some of these situations.
+// A server connection will accept multiplexed sessions even if multiplexing was not set or
+// negotiated, but will close the connection immediately when there are no more sessions.
+// A LegacyMux server connection will set the single-connection header flag if the client does,
+// allowing a Mux client to multiplex to a LegacyMux server.
+//
+// Timeout's are ignored if zero.
 type ConnConfig struct {
 	Mux          bool          // Allow sessions to be multiplexed over a single connection
+	LegacyMux    bool          // Allow session multiplexing without setting the single-connection header flag
 	Secret       []byte        // Shared secret key
-	IdleTimeout  time.Duration // Timeout when a connection has no sessions
+	IdleTimeout  time.Duration // Time before closing an idle multiplexed connection with no sessions
 	ReadTimeout  time.Duration // Maximum time to read a packet (not including waiting for first byte)
 	WriteTimeout time.Duration // Maximum time to write a packet
 
@@ -537,8 +539,8 @@ func (c *conn) serve() {
 	go c.readLoop()
 	go c.writeLoop()
 
-	var mux bool      // negotiated status of session multiplexing
-	checkMux := c.Mux // check first packet for multiplexing status
+	mux := c.LegacyMux        // For LegacyMux allow multiplexing regardless of header flags.
+	checkMux := !mux && c.Mux // For (draft) Mux check the first packet for the single-connection flag.
 	for {
 		var s *session
 

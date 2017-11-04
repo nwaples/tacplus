@@ -294,9 +294,10 @@ func TestEncryption(t *testing.T) {
 	}
 }
 
-func testMux(t *testing.T, cmux, smux bool) {
+func testMux(t *testing.T, cmux, clmux, smux, slmux bool, count int) {
 	h := testHandler
 	h.ConnConfig.Mux = smux
+	h.ConnConfig.LegacyMux = slmux
 	s, c, err := newTestInstance(&h)
 	if err != nil {
 		t.Fatal(err)
@@ -304,12 +305,16 @@ func testMux(t *testing.T, cmux, smux bool) {
 	defer s.close()
 	defer c.Close()
 	c.ConnConfig.Mux = cmux
+	c.ConnConfig.LegacyMux = clmux
 
 	ctx := context.Background()
 	if _, err = c.SendAcctRequest(ctx, testAcctReq); err != nil {
 		t.Error(err)
 		return
 	}
+
+	// Sleep to allow client connection to close
+	time.Sleep(time.Millisecond)
 
 	_, sess, err := c.SendAuthenStart(ctx, testAuthStart)
 	if err != nil {
@@ -328,30 +333,39 @@ func testMux(t *testing.T, cmux, smux bool) {
 		return
 	}
 
-	count := 3
-	if cmux && smux {
-		count = 1
-	}
 	if n := s.connCount(); n != count {
 		t.Errorf("connection count expected: %d actual: %d", count, n)
 	} else if err := s.err(); err != nil {
-		t.Errorf("unexpected server/client error: ", err)
+		t.Error("unexpected server/client error: ", err)
 	}
 }
 
 func TestConnectionMux(t *testing.T) {
 	var muxTests = []struct {
-		smux bool
-		cmux bool
+		smux, slmux bool
+		cmux, clmux bool
+		count       int
 	}{
-		{false, false},
-		{true, false},
-		{false, true},
-		{true, true},
+		{false, false, false, false, 3},
+		{true, false, false, false, 3},
+		{false, true, false, false, 3},
+		{true, true, false, false, 3},
+		{false, false, true, false, 3},
+		{true, false, true, false, 1},
+		{false, true, true, false, 1},
+		{true, true, true, false, 1},
+		{false, false, false, true, 2},
+		{true, false, false, true, 2},
+		{false, true, false, true, 1},
+		{true, true, false, true, 1},
+		{false, false, true, true, 2},
+		{true, false, true, true, 2},
+		{false, true, true, true, 1},
+		{true, true, true, true, 1},
 	}
 
 	for _, test := range muxTests {
-		testMux(t, test.cmux, test.smux)
+		testMux(t, test.cmux, test.clmux, test.smux, test.slmux, test.count)
 	}
 }
 

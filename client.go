@@ -104,7 +104,8 @@ func (c *Client) dial(ctx context.Context) (net.Conn, error) {
 }
 
 func (c *Client) newSession(ctx context.Context) (*session, error) {
-	if c.ConnConfig.Mux {
+	mux := c.ConnConfig.Mux || c.ConnConfig.LegacyMux
+	if mux {
 		// try to use existing cached connection
 		c.mu.Lock()
 		conn := c.conn
@@ -129,7 +130,7 @@ func (c *Client) newSession(ctx context.Context) (*session, error) {
 		conn.close()
 		return nil, err
 	}
-	if c.ConnConfig.Mux {
+	if mux {
 		// attempt to cache multiplexed connection
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -164,6 +165,9 @@ func (c *Client) startSession(ctx context.Context, ver, t uint8, req, rep packet
 	p := make([]byte, 1024)
 	p[hdrVer] = ver
 	p[hdrType] = t
+	if s.c.Mux && !s.c.LegacyMux {
+		p[hdrFlags] = hdrFlagSingleConnect
+	}
 	binary.BigEndian.PutUint32(p[hdrID:], s.id)
 	cs := &ClientSession{s, p}
 	if err = cs.sendRequest(ctx, req, rep); err != nil {
