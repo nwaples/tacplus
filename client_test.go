@@ -48,54 +48,40 @@ func TestClientSession(t *testing.T) {
 	defer l.close()
 	defer c.Close()
 
+	var users = []struct {
+		name, pass string
+		sess       *ClientSession
+		status     uint8
+	}{
+		{"fred", "password123", nil, AuthenStatusFail},
+		{"user", "password321", nil, AuthenStatusFail},
+		{"user", "password123", nil, AuthenStatusPass},
+	}
+
 	ctx := context.Background()
-	_, s1, err := c.SendAuthenStart(ctx, testAuthStart)
-	if err != nil {
-		t.Fatal(err)
+	for i := range users {
+		_, users[i].sess, err = c.SendAuthenStart(ctx, testAuthStart)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
-	_, s2, err := c.SendAuthenStart(ctx, testAuthStart)
-	if err != nil {
-		t.Fatal(err)
+	for _, u := range users {
+		_, err = u.sess.Continue(ctx, u.name)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
-	_, s3, err := c.SendAuthenStart(ctx, testAuthStart)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = s1.Continue(ctx, "fred")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s2.Continue(ctx, "user")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s3.Continue(ctx, "user")
-	if err != nil {
-		t.Fatal(err)
+	for _, u := range users {
+		var r *AuthenReply
+		r, err = u.sess.Continue(ctx, u.pass)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Status != u.status {
+			t.Fatalf("user=%s pass=%s wanted status: %d, got %d", u.name, u.pass, r.Status, u.status)
+		}
 	}
 
-	reply, err := s1.Continue(ctx, "password123")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reply.Status != AuthenStatusFail {
-		t.Fatalf("want status AuthenStatusFail(%d): %d", AuthenStatusFail, reply.Status)
-	}
-	reply, err = s2.Continue(ctx, "password321")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reply.Status != AuthenStatusFail {
-		t.Fatalf("want status AuthenStatusFail(%d): %d", AuthenStatusFail, reply.Status)
-	}
-	reply, err = s3.Continue(ctx, "password123")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reply.Status != AuthenStatusPass {
-		t.Fatalf("want status AuthenStatusPass(%d): %d", AuthenStatusPass, reply.Status)
-	}
 	if err = l.err(); err != nil {
 		t.Fatal("unexpected server/client error:", err)
 	}
