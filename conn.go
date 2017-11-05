@@ -356,85 +356,82 @@ func (c *conn) newClientSession(ctx context.Context) (*session, error) {
 	}
 }
 
-// readPacket reads a raw TACACS+ packet or returns an error
-func (c *conn) readPacket() ([]byte, error) {
-	p := make([]byte, hdrLen, 1024)
+// readPacketHeader reads the packet header and sets the deadline for
+// reading the body.
+func (c *conn) readPacketHeader() ([]byte, error) {
+	h := make([]byte, hdrLen, 1024)
 
-	var deadline time.Time
-	if c.ReadTimeout > 0 {
-		// clear read deadline
-		if err := c.nc.SetReadDeadline(deadline); err != nil {
-			return nil, err
-		}
-	}
-
-	// read packet header
 	var n int
 	var err error
-	// loop for first non-empty read for start of packet
-	for n == 0 && err == nil {
-		n, err = c.nc.Read(p)
-	}
-	// header not fully read
-	if n < hdrLen {
-		// set read deadline for rest of header & packet
-		if c.ReadTimeout > 0 && err == nil {
-			deadline = time.Now().Add(c.ReadTimeout)
+	for err == nil {
+		var nn int
+		nn, err = c.nc.Read(h[n:])
+		// set read deadline on first successful read
+		if n == 0 && nn > 0 && c.ReadTimeout > 0 && (err == nil || nn == hdrLen) {
+			deadline := time.Now().Add(c.ReadTimeout)
 			err = c.nc.SetReadDeadline(deadline)
 		}
-		// read rest of header
-		for n < hdrLen && err == nil {
-			var nn int
-			nn, err = c.nc.Read(p[n:])
-			n += nn
-		}
-		if n < hdrLen {
-			if err == io.EOF && n > 0 {
-				err = errUnexpectedEOF
-			}
-			return nil, err
+		n += nn
+		if n == hdrLen {
+			return h, nil
 		}
 	}
-	err = nil
-
-	// check major version
-	v := p[hdrVer]
-	if v>>4 != verMajor {
-		return nil, fmt.Errorf("unsupported major version %d", v>>4)
+	if err == io.EOF && n > 0 {
+		err = errUnexpectedEOF
 	}
+	return nil, err
+}
 
+func (c *conn) readPacketBody(h []byte) ([]byte, error) {
 	// check body size
-	s := binary.BigEndian.Uint32(p[hdrBodyLen:])
+	s := binary.BigEndian.Uint32(h[hdrBodyLen:])
 	if s > maxBodyLen {
 		return nil, errors.New("packet too large")
 	} else if s == 0 {
 		// empty packet body, so return
-		return p, nil
+		return h, nil
 	}
-	p = append(p, make([]byte, s)...)
-
-	// set read deadline for packet body if we haven't set it before
-	if c.ReadTimeout > 0 && deadline.IsZero() {
-		deadline = time.Now().Add(c.ReadTimeout)
-		if err = c.nc.SetReadDeadline(deadline); err != nil {
-			return nil, err
-		}
-	}
+	// expand packet to include body
+	p := append(h, make([]byte, s)...)
 
 	// read packet body
+	var err error
+	n := len(h)
 	l := len(p)
-	for n < l && err == nil {
+	for err == nil {
 		var nn int
 		nn, err = c.nc.Read(p[n:])
 		n += nn
-	}
-	if n == l {
-		return p, nil
+		if n == l {
+			return p, nil
+		}
 	}
 	if err == io.EOF {
 		err = errUnexpectedEOF
 	}
 	return nil, err
+}
+
+// readPacket reads a raw TACACS+ packet or returns an error
+func (c *conn) readPacket() ([]byte, error) {
+	// clear read deadline
+	if c.ReadTimeout > 0 {
+		if err := c.nc.SetReadDeadline(time.Time{}); err != nil {
+			return nil, err
+		}
+	}
+	// read packet header
+	h, err := c.readPacketHeader()
+	if err != nil {
+		return nil, err
+	}
+	// check major version
+	v := h[hdrVer]
+	if v>>4 != verMajor {
+		return nil, fmt.Errorf("unsupported major version %d", v>>4)
+	}
+	// read packet body
+	return c.readPacketBody(h)
 }
 
 // readLoop reads incoming packets sending them to the connection rc channel
