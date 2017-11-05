@@ -271,7 +271,7 @@ type ConnConfig struct {
 }
 
 func (c *ConnConfig) log(v ...interface{}) {
-	if c.Log == nil {
+	if c == nil || c.Log == nil {
 		log.Print(v...)
 	} else {
 		c.Log(v...)

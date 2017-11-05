@@ -247,11 +247,13 @@ func (h *ServerConnHandler) serveSession(sess *session) {
 // Serve processes incoming TACACS+ requests on the network connection nc.
 // A nil ServerConnHandler will close the connection without any processing.
 func (h *ServerConnHandler) Serve(nc net.Conn) {
+	var c *conn
 	if h != nil {
-		c := newConn(nc, h.serveSession, h.ConnConfig)
+		c = newConn(nc, h.serveSession, h.ConnConfig)
 		c.serve()
+	} else if err := nc.Close(); err != nil {
+		c.log(err)
 	}
-	nc.Close()
 }
 
 // Server is a generic network server.
