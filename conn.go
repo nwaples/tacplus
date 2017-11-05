@@ -286,9 +286,11 @@ type conn struct {
 	nc     net.Conn
 	handle func(*session) // function that processes incoming sessions
 
-	sess   map[uint32]*session // session store
-	parity uint8               // parity of sequence number for incoming packets
-	idleT  *time.Timer         // idle timer
+	sess     map[uint32]*session // session store
+	parity   uint8               // parity of sequence number for incoming packets
+	mux      bool                // connection multiplexing status
+	checkMux bool                // connection multiplexing to be negotatied
+	idleT    *time.Timer         // idle timer
 
 	// channels used for communicating with connection serving goroutines
 	sessReq   chan sessRequest  // send a request here to create a new session
@@ -486,36 +488,45 @@ func (c *conn) writeLoop() {
 	}
 }
 
-// getSession returns the session for an incoming packet. If there
-// is no current session it creates a new one and starts the background
-// handle goroutine for it.
-func (c *conn) getSession(p []byte) *session {
+// processPacket queues incoming packets to a session in channel.
+// If there is no session for the packet one will be created if
+// possible.
+func (c *conn) processPacket(p []byte) {
+	// on first packet read get mux status
+	if c.checkMux {
+		c.mux = p[hdrFlags]&hdrFlagSingleConnect > 0
+		c.checkMux = false
+	}
+
 	id := binary.BigEndian.Uint32(p[hdrID:])
 	s := c.sess[id]
-	if s != nil {
-		return s
+	if s == nil {
+		// stop idle timer if connection has no sessions
+		if len(c.sess) == 0 && c.idleT != nil && !c.idleT.Stop() {
+			// idle timer already triggered, return and let connection close
+			return
+		}
+		// create new session
+		s = newSession(c, id)
+		c.sess[id] = s
+		// start session handler goroutine
+		go c.handle(s)
 	}
-
-	// stop idle timer if connection has no sessions
-	if len(c.sess) == 0 && c.idleT != nil && !c.idleT.Stop() {
-		// idle timer already triggered
-		return nil
+	// queue packet
+	select {
+	case s.in <- p:
+	default:
+		// Full packet queue should not happen. Close session if it does.
+		c.closeSession(s)
+		s.setErr(errPacketQueueFull)
 	}
-
-	// create session
-	s = newSession(c, id)
-	c.sess[id] = s
-	// start session handler goroutine
-	go c.handle(s)
-
-	return s
 }
 
 // newSession processes a client session create request and sends
 // the result back on the clients reply channel.
-func (c *conn) newSession(sr sessRequest, mux bool) {
+func (c *conn) newSession(sr sessRequest) {
 	var r sessReply
-	if !mux && len(c.sess) > 0 {
+	if !c.mux && len(c.sess) > 0 {
 		r.err = errors.New("session multiplexing not supported")
 	} else if _, ok := c.sess[sr.id]; ok {
 		r.err = errSessionIDInUse
@@ -530,77 +541,26 @@ func (c *conn) newSession(sr sessRequest, mux bool) {
 	sr.reply <- r
 }
 
-// serve a TACACS+ connection.
-// serve multiplexes incoming packets, session create and session close requests.
-func (c *conn) serve() {
-	go c.readLoop()
-	go c.writeLoop()
-
-	mux := c.LegacyMux        // For LegacyMux allow multiplexing regardless of header flags.
-	checkMux := !mux && c.Mux // For (draft) Mux check the first packet for the single-connection flag.
-	for {
-		var s *session
-
-		select {
-		case p := <-c.rc:
-			// incoming packet
-			if checkMux {
-				// on first packet get mux status
-				mux = p[hdrFlags]&hdrFlagSingleConnect > 0
-				checkMux = false
-			}
-			s = c.getSession(p)
-			if s == nil {
-				break
-			}
-			select {
-			case s.in <- p:
-				continue
-			default:
-				s.setErr(errPacketQueueFull)
-				// fallthrough to close session
-			}
-		case s = <-c.sessClose:
-			// session close request
-			if s != c.sess[s.id] {
-				continue
-			}
-			// closed normally so readErr() should always return errSessionClosed
-			s.setErr(errSessionClosed)
-			// fallthrough to close session
-		case sr := <-c.sessReq:
-			// new session request
-			c.newSession(sr, mux)
-			continue
-		case <-c.done:
-			// close connection
-		}
-
-		// close connection
-		if s == nil {
-			break
-		}
-
-		// close session
-		delete(c.sess, s.id)
-		close(s.done)
-		close(s.in)
-		if len(c.sess) == 0 {
-			if !mux {
-				break
-			}
-			if c.IdleTimeout > 0 {
-				if c.idleT == nil {
-					// create idle timer that closes the connection when triggered
-					c.idleT = time.AfterFunc(c.IdleTimeout, c.close)
-					defer c.idleT.Stop()
-				} else {
-					c.idleT.Reset(c.IdleTimeout)
-				}
-			}
+func (c *conn) closeSession(s *session) {
+	if s != c.sess[s.id] {
+		// session already closed
+		return
+	}
+	delete(c.sess, s.id)
+	close(s.done)
+	close(s.in)
+	s.setErr(errSessionClosed)
+	if len(c.sess) == 0 && c.mux && c.IdleTimeout > 0 {
+		if c.idleT == nil {
+			// create idle timer that closes the connection when triggered
+			c.idleT = time.AfterFunc(c.IdleTimeout, c.close)
+		} else {
+			c.idleT.Reset(c.IdleTimeout)
 		}
 	}
+}
 
+func (c *conn) cleanup() {
 	// close connection done channel before session done channel
 	c.close()
 	for _, s := range c.sess {
@@ -611,10 +571,48 @@ func (c *conn) serve() {
 	if err != nil {
 		c.log(err)
 	}
+	if c.idleT != nil {
+		c.idleT.Stop()
+	}
+}
+
+// serve a TACACS+ connection.
+// serve multiplexes incoming packets, session create and session close requests.
+func (c *conn) serve() {
+	go c.readLoop()
+	go c.writeLoop()
+	defer c.cleanup()
+
+	for {
+		select {
+		case p := <-c.rc:
+			// process incoming packet
+			c.processPacket(p)
+		case s := <-c.sessClose:
+			// session close request
+			c.closeSession(s)
+		case sr := <-c.sessReq:
+			// new session request
+			c.newSession(sr)
+		case <-c.done:
+			// close connection
+			return
+		}
+		// close non-mux connections with no sessions
+		if len(c.sess) == 0 && !c.mux {
+			return
+		}
+	}
 }
 
 func newConn(nc net.Conn, h func(*session), cfg ConnConfig) *conn {
-	c := &conn{nc: nc, handle: h, ConnConfig: cfg}
+	c := &conn{
+		nc:         nc,
+		mux:        cfg.LegacyMux,             // For LegacyMux allow multiplexing regardless of header flags.
+		checkMux:   !cfg.LegacyMux && cfg.Mux, // For (draft) Mux check the first packet for the single-connection flag.
+		handle:     h,
+		ConnConfig: cfg,
+	}
 	if c.handle == nil {
 		// client connection
 		c.sessReq = make(chan sessRequest)
