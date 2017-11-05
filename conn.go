@@ -75,8 +75,9 @@ func crypt(p, key []byte) {
 	body := p[hdrLen:]
 	for len(body) > 0 {
 		h.Reset()
-		h.Write(buf)
-		h.Write(sum)
+		// write will always succeed, ignore errors
+		_, _ = h.Write(buf)
+		_, _ = h.Write(sum)
 		sum = h.Sum(nil)
 		if len(body) < len(sum) {
 			sum = sum[:len(body)]
@@ -609,7 +610,10 @@ func (c *conn) serve() {
 		close(s.done)
 		close(s.in)
 	}
-	c.nc.Close()
+	err := c.nc.Close()
+	if err != nil {
+		c.log(err)
+	}
 }
 
 func newConn(nc net.Conn, h func(*session), cfg ConnConfig) *conn {

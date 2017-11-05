@@ -151,11 +151,12 @@ func (t *testLog) close() {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	// close all connections if not already closed
 	for _, c := range t.connLog {
-		c.Close()
+		_ = c.Close()
 	}
 	if t.l != nil {
-		t.l.Close()
+		_ = t.l.Close()
 	}
 }
 
@@ -175,7 +176,9 @@ func (t *testLog) log(v ...interface{}) {
 	if !ok {
 		err = errors.New(fmt.Sprint(v...))
 	}
-	t.errorLog = append(t.errorLog, err)
+	if err != nil {
+		t.errorLog = append(t.errorLog, err)
+	}
 }
 
 func (t *testLog) err() error {
@@ -210,7 +213,7 @@ func newTestInstance(h *ServerConnHandler) (*testLog, *Client, error) {
 			s.Serve(nc)
 		},
 	}
-	go srv.Serve(l)
+	go func() { t.log(srv.Serve(l)) }()
 
 	c := &Client{
 		Addr: l.Addr().String(),

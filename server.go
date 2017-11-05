@@ -274,7 +274,6 @@ func (srv *Server) Serve(l net.Listener) error {
 		logErr = log.Print
 	}
 
-	defer l.Close()
 	var tempDelay time.Duration
 	for {
 		c, err := l.Accept()
@@ -292,6 +291,7 @@ func (srv *Server) Serve(l net.Listener) error {
 				time.Sleep(tempDelay)
 				continue
 			}
+			_ = l.Close() // ignore error, can only return one
 			return err
 		}
 		tempDelay = 0
