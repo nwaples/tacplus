@@ -112,6 +112,11 @@ func (s *ServerSession) GetPass(ctx context.Context, message string) (*AuthenCon
 	return s.sendReply(ctx, r)
 }
 
+// GetNASIP returns the address of the remote NAS for this session
+func (s *ServerSession) GetNASIP() net.Addr {
+	return s.session.c.nc.RemoteAddr()
+}
+
 // A RequestHandler is used for processing the three different types of TACACS+ requests.
 //
 // Each handle function takes a context and a request/start packet and returns a reply/response
