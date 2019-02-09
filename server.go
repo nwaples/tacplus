@@ -112,6 +112,16 @@ func (s *ServerSession) GetPass(ctx context.Context, message string) (*AuthenCon
 	return s.sendReply(ctx, r)
 }
 
+// RemoteAddr returns the remote network address (NAS IP Address) for the session.
+func (s *ServerSession) RemoteAddr() net.Addr {
+	return s.session.c.nc.RemoteAddr()
+}
+
+// LocalAddr returns the local network address for the session.
+func (s *ServerSession) LocalAddr() net.Addr {
+	return s.session.c.nc.LocalAddr()
+}
+
 // A RequestHandler is used for processing the three different types of TACACS+ requests.
 //
 // Each handle function takes a context and a request/start packet and returns a reply/response
