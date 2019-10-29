@@ -138,8 +138,8 @@ func (s *ServerSession) LocalAddr() net.Addr {
 // HandleAcctRequest processes an accounting request, returning an optional reply.
 type RequestHandler interface {
 	HandleAuthenStart(ctx context.Context, a *AuthenStart, s *ServerSession) *AuthenReply
-	HandleAuthorRequest(ctx context.Context, a *AuthorRequest) *AuthorResponse
-	HandleAcctRequest(ctx context.Context, a *AcctRequest) *AcctReply
+	HandleAuthorRequest(ctx context.Context, a *AuthorRequest, s *ServerSession) *AuthorResponse
+	HandleAcctRequest(ctx context.Context, a *AcctRequest, s *ServerSession) *AcctReply
 }
 
 // A ServerConnHandler serves TACACS+ requests on a network connection.
@@ -171,7 +171,7 @@ func (h *ServerConnHandler) handleAuthenStart(ctx context.Context, s *ServerSess
 	return s.p, err
 }
 
-func (h *ServerConnHandler) handleAuthorRequest(ctx context.Context, p []byte) ([]byte, error) {
+func (h *ServerConnHandler) handleAuthorRequest(ctx context.Context, p []byte, s *ServerSession) ([]byte, error) {
 	ar := new(AuthorRequest)
 	err := ar.unmarshal(p[hdrLen:])
 	if err != nil {
@@ -182,7 +182,7 @@ func (h *ServerConnHandler) handleAuthorRequest(ctx context.Context, p []byte) (
 		p[hdrVer] = verDefault
 		return p, err
 	}
-	reply := h.Handler.HandleAuthorRequest(ctx, ar)
+	reply := h.Handler.HandleAuthorRequest(ctx, ar, s)
 	if reply == nil {
 		return nil, nil
 	}
@@ -193,7 +193,7 @@ func (h *ServerConnHandler) handleAuthorRequest(ctx context.Context, p []byte) (
 	return p, err
 }
 
-func (h *ServerConnHandler) handleAcctRequest(ctx context.Context, p []byte) ([]byte, error) {
+func (h *ServerConnHandler) handleAcctRequest(ctx context.Context, p []byte, s *ServerSession) ([]byte, error) {
 	ar := new(AcctRequest)
 	err := ar.unmarshal(p[hdrLen:])
 	if err != nil {
@@ -204,7 +204,7 @@ func (h *ServerConnHandler) handleAcctRequest(ctx context.Context, p []byte) ([]
 		p[hdrVer] = verDefault
 		return p, err
 	}
-	reply := h.Handler.HandleAcctRequest(ctx, ar)
+	reply := h.Handler.HandleAcctRequest(ctx, ar, s)
 	if reply == nil {
 		return nil, nil
 	}
@@ -233,9 +233,9 @@ func (h *ServerConnHandler) serveSession(sess *session) {
 	case sessTypeAuthen:
 		s.p, err = h.handleAuthenStart(s.context(), s)
 	case sessTypeAuthor:
-		s.p, err = h.handleAuthorRequest(s.context(), s.p)
+		s.p, err = h.handleAuthorRequest(s.context(), s.p, s)
 	case sessTypeAcct:
-		s.p, err = h.handleAcctRequest(s.context(), s.p)
+		s.p, err = h.handleAcctRequest(s.context(), s.p, s)
 	default:
 		err = fmt.Errorf("invalid session type %d", s.p[hdrType])
 	}
