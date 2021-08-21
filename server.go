@@ -138,8 +138,8 @@ func (s *ServerSession) LocalAddr() net.Addr {
 // HandleAcctRequest processes an accounting request, returning an optional reply.
 type RequestHandler interface {
 	HandleAuthenStart(ctx context.Context, a *AuthenStart, s *ServerSession) *AuthenReply
-	HandleAuthorRequest(ctx context.Context, a *AuthorRequest) *AuthorResponse
-	HandleAcctRequest(ctx context.Context, a *AcctRequest) *AcctReply
+	HandleAuthorRequest(ctx context.Context, a *AuthorRequest, s *ServerSession) *AuthorResponse
+	HandleAcctRequest(ctx context.Context, a *AcctRequest, s *ServerSession) *AcctReply
 }
 
 // A ServerConnHandler serves TACACS+ requests on a network connection.
@@ -171,48 +171,48 @@ func (h *ServerConnHandler) handleAuthenStart(ctx context.Context, s *ServerSess
 	return s.p, err
 }
 
-func (h *ServerConnHandler) handleAuthorRequest(ctx context.Context, p []byte) ([]byte, error) {
+func (h *ServerConnHandler) handleAuthorRequest(ctx context.Context, s *ServerSession) ([]byte, error) {
 	ar := new(AuthorRequest)
-	err := ar.unmarshal(p[hdrLen:])
+	err := ar.unmarshal(s.p[hdrLen:])
 	if err != nil {
-		return p, err
+		return s.p, err
 	}
-	if p[hdrVer] != verDefault {
-		err = fmt.Errorf("unsupported authorization minor version %d", p[hdrVer]&0xf)
-		p[hdrVer] = verDefault
-		return p, err
+	if s.p[hdrVer] != verDefault {
+		err = fmt.Errorf("unsupported authorization minor version %d", s.p[hdrVer]&0xf)
+		s.p[hdrVer] = verDefault
+		return s.p, err
 	}
-	reply := h.Handler.HandleAuthorRequest(ctx, ar)
+	reply := h.Handler.HandleAuthorRequest(ctx, ar, s)
 	if reply == nil {
 		return nil, nil
 	}
-	p, err = reply.marshal(p[:hdrLen])
+	s.p, err = reply.marshal(s.p[:hdrLen])
 	if err != nil {
 		err = fmt.Errorf("Bad Server AuthorResponse: %s", err)
 	}
-	return p, err
+	return s.p, err
 }
 
-func (h *ServerConnHandler) handleAcctRequest(ctx context.Context, p []byte) ([]byte, error) {
+func (h *ServerConnHandler) handleAcctRequest(ctx context.Context, s *ServerSession) ([]byte, error) {
 	ar := new(AcctRequest)
-	err := ar.unmarshal(p[hdrLen:])
+	err := ar.unmarshal(s.p[hdrLen:])
 	if err != nil {
-		return p, err
+		return s.p, err
 	}
-	if p[hdrVer] != verDefault {
-		err = fmt.Errorf("unsupported accounting minor version %d", p[hdrVer]&0xf)
-		p[hdrVer] = verDefault
-		return p, err
+	if s.p[hdrVer] != verDefault {
+		err = fmt.Errorf("unsupported accounting minor version %d", s.p[hdrVer]&0xf)
+		s.p[hdrVer] = verDefault
+		return s.p, err
 	}
-	reply := h.Handler.HandleAcctRequest(ctx, ar)
+	reply := h.Handler.HandleAcctRequest(ctx, ar, s)
 	if reply == nil {
 		return nil, nil
 	}
-	p, err = reply.marshal(p[:hdrLen])
+	s.p, err = reply.marshal(s.p[:hdrLen])
 	if err != nil {
 		err = fmt.Errorf("Bad Server AcctReply: %s", err)
 	}
-	return p, err
+	return s.p, err
 }
 
 func (h *ServerConnHandler) serveSession(sess *session) {
@@ -233,9 +233,9 @@ func (h *ServerConnHandler) serveSession(sess *session) {
 	case sessTypeAuthen:
 		s.p, err = h.handleAuthenStart(s.context(), s)
 	case sessTypeAuthor:
-		s.p, err = h.handleAuthorRequest(s.context(), s.p)
+		s.p, err = h.handleAuthorRequest(s.context(), s)
 	case sessTypeAcct:
-		s.p, err = h.handleAcctRequest(s.context(), s.p)
+		s.p, err = h.handleAcctRequest(s.context(), s)
 	default:
 		err = fmt.Errorf("invalid session type %d", s.p[hdrType])
 	}

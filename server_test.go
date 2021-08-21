@@ -101,7 +101,7 @@ func (t testRequestHandler) HandleAuthenStart(ctx context.Context, a *AuthenStar
 	return &AuthenReply{Status: AuthenStatusFail}
 }
 
-func (t testRequestHandler) HandleAuthorRequest(ctx context.Context, a *AuthorRequest) *AuthorResponse {
+func (t testRequestHandler) HandleAuthorRequest(ctx context.Context, a *AuthorRequest, s *ServerSession) *AuthorResponse {
 	if u, ok := t[a.User]; ok {
 		return &AuthorResponse{Status: AuthorStatusPassAdd, Arg: u.args}
 	}
@@ -111,7 +111,7 @@ func (t testRequestHandler) HandleAuthorRequest(ctx context.Context, a *AuthorRe
 	return &AuthorResponse{Status: AuthorStatusFail}
 }
 
-func (t testRequestHandler) HandleAcctRequest(ctx context.Context, a *AcctRequest) *AcctReply {
+func (t testRequestHandler) HandleAcctRequest(ctx context.Context, a *AcctRequest, s *ServerSession) *AcctReply {
 	if a.User == "ignore" {
 		return nil
 	}
@@ -128,14 +128,14 @@ func (h *delayedRequestHandler) HandleAuthenStart(ctx context.Context, a *Authen
 	return h.h.HandleAuthenStart(ctx, a, s)
 }
 
-func (h *delayedRequestHandler) HandleAuthorRequest(ctx context.Context, a *AuthorRequest) *AuthorResponse {
+func (h *delayedRequestHandler) HandleAuthorRequest(ctx context.Context, a *AuthorRequest, s *ServerSession) *AuthorResponse {
 	time.Sleep(h.t)
-	return h.h.HandleAuthorRequest(ctx, a)
+	return h.h.HandleAuthorRequest(ctx, a, s)
 }
 
-func (h *delayedRequestHandler) HandleAcctRequest(ctx context.Context, a *AcctRequest) *AcctReply {
+func (h *delayedRequestHandler) HandleAcctRequest(ctx context.Context, a *AcctRequest, s *ServerSession) *AcctReply {
 	time.Sleep(h.t)
-	return h.h.HandleAcctRequest(ctx, a)
+	return h.h.HandleAcctRequest(ctx, a, s)
 }
 
 type testLog struct {
