@@ -43,6 +43,7 @@ var (
 	errSessionNotFound  = errors.New("session not found or timed out")
 	errUnexpectedEOF    = errors.New("unexpected EOF")
 	errPacketQueueFull  = errors.New("packet queue full")
+	errInvalidSecret    = errors.New("invalid secret")
 )
 
 // doneContext allows a done channel to be used as a context.Context
@@ -89,6 +90,30 @@ func crypt(p, key []byte) {
 	}
 }
 
+// Check if a payload can be unmarshalled
+func checkPayload(p []byte, c * ConnConfig) error {
+	if hdrType > len(p) - 1 {
+		return errors.New("Invalid packet length")
+	}
+	switch p[hdrType] {
+	case sessTypeAuthen:
+		as := new(AuthenStart)
+		err := as.unmarshal(p[hdrLen:])
+		return err
+	case sessTypeAuthor:
+		as := new(AuthorRequest)
+		err := as.unmarshal(p[hdrLen:])
+		return err
+	case sessTypeAcct:
+		as := new(AcctRequest)
+		err := as.unmarshal(p[hdrLen:])
+		return err
+	default:
+		return errors.New("invalid session type")
+	}
+	return nil
+}
+
 // a packet can be marshalled to and from raw bytes
 type packet interface {
 	marshal([]byte) ([]byte, error) // appends the encoded packet to the provided slice
@@ -109,6 +134,7 @@ type session struct {
 	in   chan []byte   // Buffered channel for incoming raw packet
 	c    *conn         // Connection for session
 	done chan struct{} // close channel to close session
+	rotatingSecretIndex int // Index of the identified rotating secrets
 
 	mu  sync.Mutex // Guards the following
 	err error      // last seen error
@@ -180,7 +206,26 @@ func (s *session) readPacket(ctx context.Context) ([]byte, error) {
 		return p, errInvalidSeqNo
 	}
 
-	crypt(p, s.c.Secret)
+	if s.c.RotatingSecrets == nil {
+		crypt(p, s.c.Secret)
+	} else if s.rotatingSecretIndex >= 0 {
+		crypt(p, s.c.RotatingSecrets[s.rotatingSecretIndex])
+	} else {
+		for index, secret := range s.c.RotatingSecrets {
+			crypt(p, secret)
+			err := checkPayload(p, &s.c.ConnConfig)
+			if err == nil {
+				s.rotatingSecretIndex = index
+				break
+			} else {
+				// Recover the packet to original
+				crypt(p, secret)
+			}
+		}
+		if s.rotatingSecretIndex < 0 {
+			return p, errInvalidSecret
+		}
+	}
 	return p, nil
 }
 
@@ -197,7 +242,14 @@ func (s *session) writePacket(ctx context.Context, p []byte) error {
 
 	// set body size
 	binary.BigEndian.PutUint32(p[hdrBodyLen:], uint32(len(p)-hdrLen))
-	crypt(p, s.c.Secret)
+
+	if s.c.RotatingSecrets == nil {
+		crypt(p, s.c.Secret)
+	} else if s.rotatingSecretIndex >= 0 {
+		crypt(p, s.c.RotatingSecrets[s.rotatingSecretIndex])
+	} else {
+		return errors.New("No valid secret is found for encryption")
+	}
 
 	wr := writeRequest{p: p, ec: make(chan error, 1)}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -226,6 +278,7 @@ func newSession(c *conn, id uint32) *session {
 	s := &session{id: id, c: c}
 	s.in = make(chan []byte, 1)
 	s.done = make(chan struct{})
+	s.rotatingSecretIndex = -1
 	return s
 }
 
@@ -260,12 +313,14 @@ type sessRequest struct {
 //
 // Timeout's are ignored if zero.
 type ConnConfig struct {
-	Mux          bool          // Allow sessions to be multiplexed over a single connection
-	LegacyMux    bool          // Allow session multiplexing without setting the single-connection header flag
-	Secret       []byte        // Shared secret key
-	IdleTimeout  time.Duration // Time before closing an idle multiplexed connection with no sessions
-	ReadTimeout  time.Duration // Maximum time to read a packet (not including waiting for first byte)
-	WriteTimeout time.Duration // Maximum time to write a packet
+	Mux             bool          // Allow sessions to be multiplexed over a single connection
+	LegacyMux       bool          // Allow session multiplexing without setting the single-connection header flag
+	Secret          []byte        // Shared secret key
+	RotatingSecrets [][]byte      // Rotating shared secret keys. This is necessary when the new secret is still being rolled out.
+	                              // When it is set @ref Secret is discard
+	IdleTimeout     time.Duration // Time before closing an idle multiplexed connection with no sessions
+	ReadTimeout     time.Duration // Maximum time to read a packet (not including waiting for first byte)
+	WriteTimeout    time.Duration // Maximum time to write a packet
 
 	// Optional function to log errors. If not defined log.Print will be used.
 	Log func(v ...interface{})
